@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f5f1">
+  <meta name="description" content="NEW OP · demo local de gestió d'un taller tèxtil amb dades fictícies.">
+  <title>NEW OP · Espai de taller</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css?v=bb0c234ddb02">
+  <script src="demo.js?v=575aff5eeea4" defer></script>
+  <script src="browser-client.js" defer></script>
+  <script src="server-store.js?v=227fd3b45dbb" defer></script>
+  <script src="app.js?v=e591e80f7f84" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#view">Salta al contingut</a>
+  <div id="app">
+    <div id="menu-backdrop" hidden></div>
+    <aside id="sidebar" class="sidebar" aria-label="Espai de taller">
+      <a class="brand" href="#/inici" aria-label="NEW OP · Inici"><img src="assets/newop-logo.png" alt="NEW OP" width="180" height="54"></a>
+      <p class="brand-caption">ESPAI DE TALLER</p>
+      <button type="button" class="mobile-close" data-action="menu-close" aria-label="Tanca el menú">Tanca ×</button>
+      <nav id="nav" aria-label="Navegació principal"></nav>
+      <div class="sidebar-bottom">
+        <div class="local-label"><span class="status-dot"></span> Entorn local · Demo</div>
+        <p>Un fil connecta tot el taller.</p>
+        <div class="side-tools">
+          <button type="button" class="text-button" data-action="connections">Connexions i IA <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="outbox">Safata de connectors <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="refresh-state">Actualitza les dades <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="attachments-library">Arxius privats i trasllat <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="backup">Descarrega dades JSON <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="import-backup" id="import-backup-button" hidden>Importa una còpia JSON <span aria-hidden="true">↗</span></button>
+          <button type="button" class="text-button" data-action="session" id="session-button">Sessió</button>
+          <span id="api-state" class="api-state" role="status">Carregant la demo…</span>
+        </div>
+        <button type="button" class="text-button" data-action="reset">Reinicia la demo <span aria-hidden="true">↗</span></button>
+        <div class="credit">Preparat per NexaVision AI</div>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-left"><button id="menu-button" type="button" class="icon-button menu-button" data-action="menu-open" aria-controls="sidebar" aria-expanded="false" aria-label="Obre el menú"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button><span class="breadcrumb">Gestió del taller <span aria-hidden="true">/</span> <strong id="current-module">Inici</strong></span></div>
+        <div class="topbar-right"><span class="demo-label">DADES FICTÍCIES</span><span class="operator" aria-label="Operador de demostració">OP</span></div>
+      </header>
+      <main>
+        <div class="demo-notice"><span class="notice-mark" aria-hidden="true">i</span><span><strong>Una demo per explorar.</strong> Dades fictícies · Assistència IA revisable · Mode dels connectors visible abans d’executar · Cobraments simulats · Sense validesa fiscal o legal.</span></div>
+        <div id="storage-status" role="status"></div>
+        <div id="feedback" aria-live="polite" aria-atomic="true"></div>
+        <section id="view" tabindex="-1" aria-label="Contingut del mòdul"><div class="empty"><h1>Carregant l'espai de taller…</h1></div></section>
+        <noscript><p class="error-message">Cal activar JavaScript per utilitzar aquesta demo local.</p></noscript>
+        <footer class="page-footer"><span>NEW OP · Espai de taller</span><span>Escenari fictici · 5 de novembre de 2026</span></footer>
+      </main>
+    </div>
+    <dialog id="overlay" aria-labelledby="dialog-title"></dialog>
+  </div>
+  <section id="print-document" aria-label="Document imprimible"></section>
+</body>
+</html>
