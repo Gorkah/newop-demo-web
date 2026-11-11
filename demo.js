@@ -751,6 +751,11 @@
         id, number: nextNumber(s, 'quotes', 'PRE'), clientId: c.clientId, createdOn: s.scenarioDate, notes: c.notes, tariff: c.tariff,
         status: 'draft', revision: 1, reviewedRevision: null, lines, taxRateBps: s.catalog.taxRateBps, totals: quoteTotals(s, lines)
       };
+      if (c.meetingId) {
+        const meeting = wfGet(s,'meetings',c.meetingId);
+        if (meeting.clientId !== c.clientId) fail('CLIENT_MISMATCH','clientId','La reunió és d’un altre client.');
+        meeting.quoteIds.push(quote.id);
+      }
       s.quotes.push(quote);
       return quote;
     },

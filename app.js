@@ -23,6 +23,7 @@
     quote:'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5',
     delivery:'M3 6h12v12H3zM15 10h4l3 4v4h-7M5 6V3h8v3M7 18v3M18 18v3',
     invoice:'M5 3h14v18l-3-2-4 2-4-2-3 2zM9 8h6M9 12h6M9 16h3',
+    calendar:'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
     task:'M9 4h6v3H9zM9 5H5v16h14V5h-4M8 13l2 2 5-5',
     fabric:'m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5',
     clients:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-4M16 3a4 4 0 0 1 0 8',
@@ -34,7 +35,7 @@
   const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPaths[name] || iconPaths.quote}"></path></svg>`;
   const modules = [
     ['inici','Inici','home'], ['pressupostos','Pressupostos','quote'], ['albarans','Albarans','delivery'],
-    ['facturacio','Facturació','invoice'], ['seguiment','Seguiment','task'], ['teixits','Teixits','fabric'],
+    ['facturacio','Facturació','invoice'], ['seguiment','Seguiment','task'], ['calendari','Calendari','calendar'], ['teixits','Teixits','fabric'],
     ['clients','Clients','clients'], ['consultes','Consultes','query']
   ];
   const statusLabels = {draft:'Esborrany',approved:'Aprovat',sent_simulated:'Enviat · simulat',workshop:'Al taller',ready:'A punt',delivered:'Lliurat',pending:'Pendent',completed:'Completada',paid_simulated:'Cobrada · simulat'};
@@ -277,7 +278,7 @@
     $('#current-module').textContent = module?.[1] || 'Ruta desconeguda';
     document.title = (module?.[1] || 'Ruta desconeguda') + ' · NEW OP';
     $$('.nav-link').forEach(el => {if (el.dataset.module === route.module) el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
-    const views = {inici:renderHome,pressupostos:renderQuotes,albarans:renderDeliveries,facturacio:renderInvoices,seguiment:renderTasks,teixits:renderFabrics,clients:renderClients,consultes:renderQueries};
+    const views = {inici:renderHome,pressupostos:renderQuotes,albarans:renderDeliveries,facturacio:renderInvoices,seguiment:renderTasks,calendari:renderCalendar,teixits:renderFabrics,clients:renderClients,consultes:renderQueries};
     try {view.innerHTML = views[route.module] ? views[route.module]() : notFound('No hem trobat aquesta pàgina');}
     catch (error) {view.innerHTML = `<div class="panel">${empty('No s’han pogut carregar les dades',error.message || 'Revisa la integració del motor local.',button('Torna a provar','refresh','',true))}</div>`;}
     storageStatus();
@@ -307,7 +308,7 @@
     return workflow().attachments.length ? `<fieldset class="source-picker"><legend>Arxius privats del teu espai (màxim 5 per registre)</legend>${workflow().attachments.map(a => `<label class="check-field compact"><input type="checkbox" name="attachmentIds" value="${escape(a.id)}"${selected.includes(a.id) ? ' checked' : ''}><span>${escape(a.filename)} · ${new Intl.NumberFormat('ca-ES').format(a.sizeBytes)} B</span></label>`).join('')}</fieldset>` : '<p class="small muted">Encara no has pujat arxius privats.</p>';
   }
   function attachmentPicker() {
-    return `<details class="attachment-picker"><summary>Adjunta una foto, un àudio o un PDF</summary><p class="small muted">Màxim 1 MiB per arxiu, 5 per registre i 20 MiB per espai. JPEG, PNG, WebP, PDF, MP3, M4A, WAV o OGG. Adjuntar no fa OCR ni transcriu: introdueix i revisa tu el text.</p>${field('attachmentFile','Arxiu privat',input('attachmentFile','file','','accept="image/jpeg,image/png,image/webp,application/pdf,audio/mpeg,audio/mp4,audio/wav,audio/ogg"'))}<div class="actions">${button('Puja l’arxiu','upload-attachment','',true)}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
+    return `<details class="attachment-picker"><summary>Adjunta una foto</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Arxiu privat',input('attachmentFile','file','','accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Puja l’arxiu','upload-attachment','',true)}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
   }
   function humanReview(label='He revisat el contingut, les dates i els imports. Aquesta acció només registra dades de demostració.') {
     return `<label class="check-field"><input type="checkbox" name="reviewed" id="workflow-reviewed" aria-describedby="workflow-reviewed-error"><span>${escape(label)}<span class="field-error" id="workflow-reviewed-error"></span></span></label>`;
@@ -327,7 +328,7 @@
   }
   function meetingsPanel(clientId=null) {
     const meetings=workflow().meetings.filter(m=>!clientId || m.clientId===clientId).slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-    return `<section class="panel">${panelHead('Reunions que es converteixen en peces','Notes i resum revisats; els adjunts no s’analitzen automàticament.',button('Desa una reunió','new-meeting',clientId || '',true,'plus'))}<div class="panel-body">${meetings.length ? `<div class="record-grid">${meetings.map(m=>`<article class="record-card"><div class="record-meta"><span>${escape(formatDateTime(m.createdAt))}</span>${link('clients',m.clientId,clientName(m.clientId))}</div><h3>${escape(m.summary)}</h3><p class="notes small">${escape(m.notes)}</p>${attachmentList(m.attachmentIds)}<div class="source-links">${(m.quoteIds || []).map(id=>link('pressupostos',id,state.quotes.find(q=>q.id===id)?.number || id)).join('')}</div><div class="actions">${button('Prepara el pressupost','meeting-quote',m.id,false,'arrow')}</div></article>`).join('')}</div>` : empty('Conserva el punt de partida','Desa les notes i un resum humà abans de preparar les peces.')}</div></section>`;
+    return `<section class="panel">${panelHead('Reunions que es converteixen en peces','Notes i resum revisats; els adjunts no s’analitzen automàticament.',button('Desa una reunió','new-meeting',clientId || '',true,'plus'))}<div class="panel-body">${meetings.length ? `<div class="record-grid">${meetings.map(m=>`<article class="record-card"><div class="record-meta"><span>${escape(formatDateTime(m.createdAt))}</span>${link('clients',m.clientId,clientName(m.clientId))}</div><h3>${escape(m.summary)}</h3><p class="notes small">${escape(m.notes)}</p>${attachmentList(m.attachmentIds)}<div class="source-links">${(m.quoteIds || []).map(id=>link('pressupostos',id,state.quotes.find(q=>q.id===id)?.number || id)).join('')}</div><div class="actions">${button('Genera des del resum','meeting-draft',m.id,false,'arrow') + button('Prepara el pressupost','meeting-quote',m.id,true)}</div></article>`).join('')}</div>` : empty('Conserva el punt de partida','Desa les notes i un resum humà abans de preparar les peces.')}</div></section>`;
   }
   function renderQuotes() {
     const content=renderQuotesBase();
@@ -348,6 +349,25 @@
   function timelinePanel(clientId=null) {
     const notes=workflow().clientNotes.filter(n=>!clientId || n.clientId===clientId).slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     return `<section class="panel">${panelHead('Cronologia del client','Hora de registre del navegador; les correccions es desen com una entrada nova.',button('Afegeix una entrada','new-client-note',clientId || '',true,'plus'))}<div class="panel-body">${notes.length ? `<ol class="timeline">${notes.map(n=>`<li><div class="record-meta"><time>${escape(formatDateTime(n.createdAt))}</time><span class="badge">${escape(noteKinds[n.kind] || n.kind)}</span>${link('clients',n.clientId,clientName(n.clientId))}</div><p class="notes">${escape(n.text)}</p><div class="timeline-dates">${n.occurredOn ? `<span>Fet: ${date(n.occurredOn)}</span>` : ''}${n.dueDate ? `<span>Venciment: ${date(n.dueDate)}</span>` : ''}</div>${attachmentList(n.attachmentIds)}${n.sourceRefs?.length ? `<div class="source-links">${workflowSources(n.sourceRefs)}</div>` : ''}</li>`).join('')}</ol>` : empty('Cada canvi, amb el seu moment','Afegeix notes, canvis, proves i lliuraments sense sobreescriure el fil anterior.')}</div></section>`;
+  }
+  function renderCalendar() {
+    const today = new Date(serverToday() + 'T12:00:00Z');
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(route.id || '') ? new Date(route.id + 'T12:00:00Z') : today;
+    if (!Number.isFinite(start.getTime())) return notFound();
+    start.setUTCDate(start.getUTCDate() - (start.getUTCDay()+6)%7);
+    const day = offset => new Date(start.getTime()+offset*86400000).toISOString().slice(0,10);
+    const events = [
+      ...state.tasks.filter(t=>t.status==='pending').map(t=>({on:t.dueDate,text:t.text,client:t.clientId,module:'seguiment',id:t.id})),
+      ...workflow().clientNotes.filter(n=>['fitting','delivery'].includes(n.kind)).map(n=>({on:n.dueDate || n.occurredOn,text:n.text,client:n.clientId,module:'clients',id:n.clientId})),
+      ...workflow().workshopEntries.map(w=>({on:w.dueDate,text:w.workshopName+' · '+w.text,client:w.clientId,module:'albarans',id:w.deliveryNoteId}))
+    ];
+    const nav = (offset,label) => `<a class="button secondary" href="${path('calendari',day(offset))}">${label}</a>`;
+    const days = ['Dilluns','Dimarts','Dimecres','Dijous','Divendres','Dissabte','Diumenge'];
+    return heading('Calendari','Tasques, proves i lliuraments en una agenda setmanal.',button('Nou seguiment','new-task','',false,'plus')+button('Afegeix una entrada','new-client-note','',true,'plus'))+
+      `<section class="panel pad"><div class="actions">${nav(-7,'Setmana anterior')}<a class="button secondary" href="#/calendari">Avui</a>${nav(7,'Setmana següent')}</div><h2>${date(day(0))} - ${date(day(6))}</h2><div class="calendar-grid">${days.map((name,index)=>{
+        const items = events.filter(event=>event.on===day(index));
+        return `<article class="record-card"><h3>${name} · ${date(day(index))}</h3>${items.length ? `<ul>${items.map(event=>`<li>${link(event.module,event.id,event.text)}<br><small>${escape(clientName(event.client))}</small></li>`).join('')}</ul>` : '<p class="muted">Sense cites</p>'}</article>`;
+      }).join('')}</div></section>`;
   }
   function renderTasks() {return renderTasksBase() + (!route.id ? timelinePanel() : '');}
   function renderClients() {
@@ -515,6 +535,7 @@
     switch(action) {
       case 'new-meeting':openMeeting(id);break;
       case 'manual-quote':openManualQuote(id);break;
+      case 'meeting-draft': {const meeting=workflow().meetings.find(m=>m.id===id);if(meeting)newQuote(meeting.clientId,meeting);break;}
       case 'meeting-quote':openManualQuote('',id);break;
       case 'edit-manual-quote':openManualQuote('','',state.quotes.find(q=>q.id===id));break;
       case 'add-manual-line':$('#manual-lines',overlay).insertAdjacentHTML('beforeend',manualRow());break;
@@ -758,8 +779,8 @@
       <section class="panel pad ai-panel"><div class="eyebrow">CONSULTA ASSISTIDA · IA</div><h2>Pregunta amb ajuda de la IA</h2><p class="small muted">La IA només tria la intenció i les fonts; el text i els imports es construeixen des dels registres locals i enllacen cada font. No modifica cap dada.</p><form data-form="ai-answer" novalidate>${formError}${field('aiQuestion','La teva pregunta',`<textarea id="aiQuestion" name="aiQuestion" rows="3" maxlength="${state.catalog.queryMaxLength}" aria-describedby="aiQuestion-error" placeholder="Ex.: Quins pressupostos té pendents un client?" required></textarea>`,`Màxim ${state.catalog.queryMaxLength} caràcters.`)}<div class="actions"><button type="submit" class="button" id="ai-answer-run">${icon('query')} Consulta amb IA</button><button type="button" class="button secondary" id="ai-answer-cancel" data-action="ai-cancel" data-job="answer" hidden>Cancel·la la consulta</button></div></form><div id="ai-answer-status" role="status" aria-live="polite"></div><div id="ai-answer-result">${aiAnswerSection()}</div></section>`;
   }
 
-  function newQuote(clientId = '') {
-    openDialog('De les notes al pressupost',`<div class="actions workflow-intro">${button('Des de reunió / entrada manual','manual-quote',clientId,true,'plus')}${button('Desa una reunió','new-meeting',clientId,true,'task')}</div><p class="dialog-intro">Genera un esborrany determinista amb exemples del catàleg local. Després hauràs de revisar-lo i aprovar-lo.</p><form data-form="new-quote" novalidate>${formError}<div class="form-grid">${field('clientId','Client fictici',clientOptions(clientId))}${field('tariff','Tarifa il·lustrativa',tariffOptions('tariff','A'))}</div>${field('notes','Notes de la reunió',`<textarea id="notes" name="notes" aria-describedby="notes-error" required autofocus placeholder="Indica una quantitat i una peça coneguda…"></textarea>`)}<div class="hint"><strong>Prova un exemple del catàleg</strong>${state.catalog.noteRules.map((rule,i) => `<button type="button" class="example-button" data-action="note-example" data-index="${i}">${escape(rule.example)}</button>`).join('')}</div><details class="hint"><summary>Tarifes A/B/C i trams ficticis</summary>${state.catalog.tariffs.map(t => `<p><strong>Tarifa ${escape(t.code)}</strong>: ${t.bands.map(b => 'a partir de '+b.minQuantity+' u. · '+money(b.unitPriceCents)+'/u.').join(' / ')}</p>`).join('')}</details>${quoteAiBox()}${formActions('Genera l’esborrany simulat')}${disclaimer}</form>`);
+  function newQuote(clientId = '', meeting = null) {
+    openDialog('De les notes al pressupost',`<div class="actions workflow-intro">${button('Des de reunió / entrada manual','manual-quote',clientId,true,'plus')}${button('Desa una reunió','new-meeting',clientId,true,'task')}</div><p class="dialog-intro">Genera un esborrany determinista amb exemples del catàleg local. Després hauràs de revisar-lo i aprovar-lo.</p><form data-form="new-quote" data-meeting-id="${escape(meeting?.id || '')}" novalidate>${formError}<div class="form-grid">${field('clientId','Client fictici',clientOptions(clientId))}${field('tariff','Tarifa il·lustrativa',tariffOptions('tariff','A'))}</div>${field('notes','Notes de la reunió',`<textarea id="notes" name="notes" aria-describedby="notes-error" required autofocus placeholder="Indica una quantitat i una peça coneguda…">${escape(meeting?.summary || '')}</textarea>`)}<div class="hint"><strong>Prova un exemple del catàleg</strong>${state.catalog.noteRules.map((rule,i) => `<button type="button" class="example-button" data-action="note-example" data-index="${i}">${escape(rule.example)}</button>`).join('')}</div><details class="hint"><summary>Tarifes A/B/C i trams ficticis</summary>${state.catalog.tariffs.map(t => `<p><strong>Tarifa ${escape(t.code)}</strong>: ${t.bands.map(b => 'a partir de '+b.minQuantity+' u. · '+money(b.unitPriceCents)+'/u.').join(' / ')}</p>`).join('')}</details>${quoteAiBox()}${formActions('Genera l’esborrany simulat')}${disclaimer}</form>`);
   }
 
   function remainingQuantity(quote,line) {
@@ -1325,7 +1346,7 @@
         }
         case 'new-client': await commit({type:'CREATE_CLIENT',name:get('name'),email:get('email').trim() || null},form,'Client fictici creat.','clients');break;
         case 'new-task': await commit({type:'CREATE_TASK',clientId:get('clientId'),text:get('text'),dueDate:get('dueDate')},form,'Seguiment desat. No s’ha enviat cap missatge.','seguiment');break;
-        case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff')},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
+        case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff'),meetingId:form.dataset.meetingId || null},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
         case 'edit-quote': {
           const q = state.quotes.find(item => item.id === form.dataset.id);
           const lines = editedQuoteLines(form);

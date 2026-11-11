@@ -23,6 +23,8 @@ dialog{padding:0;border:1px solid var(--line);border-radius:15px;width:min(680px
 /* Controls exclusius de l'edició amb servidor. */
 [data-action="connections"], [data-action="outbox"], [data-action="attachments-library"],
 [data-action="session"], [data-action="csv-dialog"], [data-action="ai-followup"],
-[data-action="quote-followup"], .attachment-picker, .ai-box, .ai-panel {
+[data-action="quote-followup"], .ai-box, .ai-panel {
   display: none !important;
 }
+
+.calendar-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr));gap:12px}.calendar-grid ul{padding-inline-start:18px}.calendar-grid li+li{margin-top:10px}
