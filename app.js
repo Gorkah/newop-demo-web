@@ -1401,7 +1401,7 @@
           closeDialog();state = store.getState();if (session.mode !== "browser") readLegacy();render(true);notify('Dades importades al servidor. La còpia original del navegador es conserva.');break;
         }
         case 'new-client': await commit({type:'CREATE_CLIENT',name:get('name'),email:get('email').trim() || null},form,'Client fictici creat.','clients');break;
-        case 'new-task': await commit({type:'CREATE_TASK',clientId:get('clientId'),text:get('text'),dueDate:get('dueDate')},form,'Seguiment desat. No s’ha enviat cap missatge.','seguiment');break;
+        case 'new-task': await commit({type:'CREATE_TASK',clientId:get('clientId'),text:get('text'),dueDate:get('dueDate')},form,'Seguiment desat. No s’ha enviat cap missatge.',route.module === 'calendari' ? undefined : 'seguiment');break;
         case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff'),meetingId:form.dataset.meetingId || null},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
         case 'edit-quote': {
           const q = state.quotes.find(item => item.id === form.dataset.id);
@@ -1533,7 +1533,7 @@
         closeDialog();lastAnswer = null;$('#print-document').innerHTML = '';navigate('inici');render(true);notify('Demo restaurada amb les dades fictícies inicials.');break;
       }
       case 'new-client':openDialog('Nou client fictici',`<p class="dialog-intro">Crea una marca sintètica per explorar el taller. Utilitza únicament dades inventades.</p><form data-form="new-client" novalidate>${formError}${field('name','Nom de la marca fictícia',input('name','text','','required autofocus placeholder="Ex.: Estudi de Mostra"'))}${field('email','Correu fictici (opcional)',input('email','email','','placeholder="mostra@example.com"'),'Només s’admet el domini example.com. No introdueixis dades reals.')}${formActions('Crea el client fictici')}${disclaimer}</form>`);break;
-      case 'new-task':openDialog('Un nou fil de seguiment',`<p class="dialog-intro">Desa una nota i una data. Aquesta acció no envia cap missatge.</p><form data-form="new-task" novalidate>${formError}${field('clientId','Client fictici',clientOptions(id || ''))}${field('text','Nota de seguiment',`<textarea id="text" name="text" aria-describedby="text-error" required autofocus placeholder="Què cal recordar?"></textarea>`)}${field('dueDate','Data prevista',input('dueDate','date',state.scenarioDate,'required'))}${formActions('Desa el seguiment')}${disclaimer}</form>`);break;
+      case 'new-task':openDialog('Un nou fil de seguiment',`<p class="dialog-intro">Desa una nota i una data. Aquesta acció no envia cap missatge.</p><form data-form="new-task" novalidate>${formError}${field('clientId','Client fictici',clientOptions(id || ''))}${field('text','Nota de seguiment',`<textarea id="text" name="text" aria-describedby="text-error" required autofocus placeholder="Què cal recordar?"></textarea>`)}${field('dueDate','Data prevista',input('dueDate','date',route.module === 'calendari' && route.id ? route.id : serverToday(),'required'))}${formActions('Desa el seguiment')}${disclaimer}</form>`);break;
       case 'complete-task':await commit({type:'COMPLETE_TASK',id},null,'Seguiment completat i conservat a l’historial.');break;
       case 'new-quote':newQuote(id);break;
       case 'note-example':$('#notes',overlay).value = state.catalog.noteRules[Number(el.dataset.index)].example;invalidateQuoteProposal();$('#notes',overlay).focus();break;
