@@ -82,7 +82,7 @@
   const overlay = $('#overlay');
   const view = $('#view');
 
-  $('#nav').innerHTML = modules.map(([slug,label,image], index) => `<a class="nav-link" href="${path(slug)}" data-module="${slug}">${icon(image)}<span>${label}</span><span class="nav-index">${String(index + 1).padStart(2,'0')}</span></a>`).join('');
+  $('#nav').innerHTML = modules.map(([slug,label,image]) => `<a class="nav-link" href="${path(slug)}" data-module="${slug}">${icon(image)}<span>${label}</span></a>`).join('');
   $('.skip-link').addEventListener('click', event => {event.preventDefault();view.focus();view.scrollIntoView({block:'start'});});
 
   function fatal(message) {
@@ -656,7 +656,14 @@
       ['Seguiments pendents',summary.tasksPendingCount,'Tasques del taller','seguiment','task'],
       ['Facturació il·lustrativa',money(summary.invoicedCents),'Total dels documents ficticis','facturacio','invoice']
     ];
-    return heading('El taller, d’una ullada.','El que tenim entre mans, connectat en un mateix espai.',button('Nou pressupost','new-quote','',false,'plus'),'DIJOUS · ' + date(data.scenarioDate)) +
+    return `<section class="atelier-hero">
+      <div class="atelier-hero-content">
+        <h1 tabindex="-1">El taller, d’una ullada.</h1>
+        <p>Pressupostos, producció i seguiment dels clients.</p>
+        <div class="actions">${button('Nou pressupost','new-quote','',false,'plus')}<a class="button secondary" href="#/calendari">${icon('calendar')} Obre el calendari</a></div>
+      </div>
+      <img src="assets/taller-editorial.webp" alt="" width="1200" height="800" fetchpriority="high">
+    </section>` +
       `<div class="stats-grid">${stats.map(([label,value,note,slug,image]) => `<a class="stat" href="${path(slug)}"><div class="stat-label">${escape(label)}<span class="stat-icon">${icon(image)}</span></div><div class="stat-value mono">${escape(value)}</div><div class="stat-note">${escape(note)} <span aria-hidden="true">↗</span></div></a>`).join('')}</div>
       <div class="grid-2"><section class="panel">${panelHead('Prioritats del taller','Pendents de l’escenari fictici',`<a href="#/seguiment">Tot el seguiment ↗</a>`)}<div class="panel-body">${data.priorityTasks.length ? data.priorityTasks.slice(0,4).map(task => `<div class="task-row"><span class="task-marker"></span><div class="task-row-content">${link('seguiment',task.id,task.text)}<small>${escape(clientName(task.clientId))}</small></div><span class="date-chip">${date(task.dueDate)}</span></div>`).join('') : empty('Tot al dia','No hi ha seguiments pendents. Les tasques completades continuen al seu mòdul.')}</div></section>
       <section class="panel">${panelHead('El ritme de producció','Albarans per estat · unitat: documents')}<div class="panel-body"><div class="pipeline">${[['workshop','Al taller'],['ready','A punt'],['delivered','Lliurats']].map(([key,label]) => `<a href="#/albarans"><strong class="mono">${data.production[key]}</strong>${label}<span class="stage-bar"></span></a>`).join('')}</div></div><div class="panel-foot">Font: albarans ficticis de l’estat local.</div></section></div>

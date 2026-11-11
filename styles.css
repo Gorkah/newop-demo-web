@@ -60,3 +60,17 @@ dialog.document-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;display:fl
 .paper-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:16px clamp(12px,3vw,30px);background:#fafafa;border-top:1px solid var(--line);flex:none}
 @media(max-width:600px){dialog.document-drawer[open]{border-radius:0}.paper-actions .button{flex:1;justify-content:center}.paper-brand{margin-bottom:14px}}
 @media print{.paper-document{padding:0}.paper-document .paper-brand img{width:165px}.paper-document table{min-width:0!important}.paper-document tr,.paper-notes{break-inside:avoid}}
+
+/* Materiales y tonos del taller en la portada. */
+.atelier-hero{display:grid;grid-template-columns:1.1fr 1fr;overflow:hidden;min-height:280px;margin-bottom:24px;border:1px solid #e4ddd1;border-radius:19px;background:#eee7dc}
+.atelier-hero-content{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:clamp(26px,4vw,58px)}
+.atelier-hero h1{max-width:13ch;font-size:clamp(32px,4.5vw,62px);line-height:.99;letter-spacing:-.06em;font-weight:650;margin-bottom:18px}
+.atelier-hero p{color:#554c41;font-size:15px;margin-bottom:23px}
+.atelier-hero .actions{gap:9px}
+.atelier-hero img{display:block;object-fit:cover;object-position:58% center;width:100%;height:100%;min-height:0}
+.sidebar{overflow-y:auto}
+.nav-link{border-radius:9px}
+.topbar{background:#fdfbf7}
+.panel,.stat{box-shadow:0 2px 8px #211a1106}
+.stat:hover{border-color:#b5a794}
+@media(max-width:760px){.atelier-hero{grid-template-columns:1fr}.atelier-hero img{height:155px;object-position:50% 55%}.atelier-hero h1{max-width:none}.atelier-hero-content{padding:25px}.atelier-hero p{margin-bottom:16px}}
