@@ -74,3 +74,19 @@ dialog.document-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;display:fl
 .panel,.stat{box-shadow:0 2px 8px #211a1106}
 .stat:hover{border-color:#b5a794}
 @media(max-width:760px){.atelier-hero{grid-template-columns:1fr}.atelier-hero img{height:155px;object-position:50% 55%}.atelier-hero h1{max-width:none}.atelier-hero-content{padding:25px}.atelier-hero p{margin-bottom:16px}}
+
+/* Jerarquia compartida de la demo web. */
+.page-heading h1{font-size:clamp(30px,4vw,48px);line-height:1.04;letter-spacing:-.045em}
+.page-heading .eyebrow{color:#67523b;letter-spacing:.13em}
+.button{border-radius:8px;font-weight:600}
+.panel-head{background:#fffcf8}
+.panel-head h2{font-size:18px}
+.panel-head p{font-size:12px}
+.stat-value{font-weight:620}
+.stat-icon{background:#f0e9de;color:#53402c}
+.record-card{background:#fffdf9}
+.toolbar{padding:14px;background:#fffcf8;border:1px solid var(--line);border-radius:12px}
+.toolbar label{margin-bottom:0}
+.panel table tbody tr:hover{background:#faf7f1}
+.paper-document table tbody tr:hover{background:transparent}
+@media(max-width:480px){.toolbar label{min-width:min(100%,150px)}}
