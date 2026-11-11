@@ -813,6 +813,55 @@
     openDialog('Agrupa albarans lliurats',`<p class="dialog-intro">Selecciona albarans d’un mateix client. La previsualització validarà la selecció i els imports abans de la revisió humana.</p><form data-form="invoice-selection" novalidate>${formError}${delivered.length ? `<div class="selection-list">${delivered.map(d => {const invoiced = state.invoices.some(i => i.deliveryNoteIds.includes(d.id));return `<label class="selection-row"><input type="checkbox" name="deliveryNoteIds" value="${escape(d.id)}"${invoiced ? ' disabled' : d.id === deliveryId ? ' checked' : ''}><span class="selection-content"><strong>${escape(d.number)}</strong><small>${escape(clientName(d.clientId))} · ${money(d.totals.totalCents)}</small></span>${invoiced ? '<span class="badge amber">Ja facturat</span>' : badge(d.status)}</label>`;}).join('')}</div>` : empty('Cap albarà lliurat','Completa el circuit de taller d’un albarà abans de facturar.')}${formActions('Previsualitza els imports')}${disclaimer}</form>`);
   }
 
+  function paperDocument(entity, kind) {
+    const delivery = kind === 'albarans';
+    const title = delivery ? 'Albarà' : 'Pressupost';
+    const client = state.clients.find(item => item.id === entity.clientId);
+    const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
+    const rows = entity.lines.map(line => `<tr>
+      <td><strong>${escape(line.garmentCode)}</strong><br>${escape(line.label)}</td>
+      <td>${line.fabricId ? escape(fabricName(line.fabricId)) : '—'}</td>
+      <td class="mono">${line.quantity}</td><td class="mono">${money(line.unitPriceCents)}</td>
+      <td class="mono">${money(BigInt(line.unitPriceCents) * BigInt(line.quantity))}</td>
+    </tr>`);
+    const source = delivery && state.quotes.find(quote => quote.id === entity.quoteId);
+    return `<article class="print-sheet paper-document">
+      <header class="paper-brand"><div><strong>Noves Iniciatives de Confecció</strong><br>Sabadell · Espai de taller</div><img src="assets/newop-logo.png" width="230" height="70" alt="NEW OP"></header>
+      <div class="paper-meta"><div><h3>${title} ${escape(entity.number)}</h3><p>Data ${date(entity.createdOn)}</p>${source ? `<p>Pressupost d’origen ${escape(source.number)}</p>` : ''}</div>
+      <div><small>Client fictici</small><br><strong>${escape(clientName(entity.clientId))}</strong>${client?.email ? `<br>${escape(client.email)}` : ''}</div></div>
+      ${table(['Ref. / descripció','Teixit','Unitats','Preu unitari','Import'], [...rows,`<tr class="paper-total"><th scope="row" colspan="2">Total de peces</th><td>${units}</td><td></td><td>${money(entity.totals.baseCents)}</td></tr>`])}
+      ${totals(entity.totals,entity.taxRateBps)}
+      ${entity.notes ? `<section class="paper-notes"><h4>Observacions</h4><p class="notes">${escape(entity.notes)}</p></section>` : ''}
+      ${delivery ? '' : '<section class="paper-notes"><h4>Acceptació del pressupost</h4><div class="paper-signatures"><span>Signatura del client</span><span>Signatura de NEW OP</span></div></section>'}
+      <footer class="paper-footer">Document de demostració · Dades fictícies · Sense validesa fiscal o legal</footer>
+    </article>`;
+  }
+
+  function openPaperDocument(entity, kind) {
+    const delivery = kind === 'albarans';
+    const title = delivery ? 'Albarà' : 'Pressupost';
+    const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
+    const markup = paperDocument(entity,kind);
+    $('#print-document').innerHTML = markup;
+    let next = '';
+    if (delivery && entity.status === 'workshop') next = 'ready';
+    if (delivery && entity.status === 'ready') next = 'delivered';
+    const action = next
+      ? `<button type="button" class="button" data-action="delivery-status" data-id="${escape(entity.id)}" data-status="${next}">${next === 'ready' ? 'Marca a punt' : 'Marca lliurat'}</button>`
+      : !delivery && entity.status === 'draft' ? button('Torna a l’esborrany','dialog-close') : '';
+    openDialog(`${clientName(entity.clientId)} · ${units} unitats`,`
+      <div class="paper-stage">${markup}</div>
+      <footer class="paper-actions">${button('Imprimeix / Desa en PDF','print','',true,'print')}${action}</footer>`,true);
+    overlay.classList.add('document-drawer');
+    const heading = $('#dialog-title',overlay);
+    const wrapper = document.createElement('div');
+    heading.before(wrapper);
+    wrapper.innerHTML = `<p class="drawer-kicker">${title} ${escape(entity.number)} ${badge(entity.status)}</p>`;
+    wrapper.append(heading);
+    wrapper.insertAdjacentHTML('beforeend',`<p class="drawer-date">${date(entity.createdOn)}</p>`);
+    heading.focus();
+  }
+
   function documentMarkup(entity, kind) {
     const title = {pressupostos:'Pressupost',albarans:'Albarà',facturacio:'Factura il·lustrativa'}[kind];
     let sources = link('clients',entity.clientId,clientName(entity.clientId));
@@ -1496,6 +1545,7 @@
         const collection = {pressupostos:state.quotes,albarans:state.deliveryNotes,facturacio:state.invoices}[route.module];
         const entity = collection?.find(item => item.id === id);
         if (!entity) {notify('No s’ha trobat el document.',true);break;}
+        if (route.module !== 'facturacio') {openPaperDocument(entity,route.module);break;}
         const markup = documentMarkup(entity,route.module);
         $('#print-document').innerHTML = markup;
         openDialog('Document de demostració',`<div class="actions" style="margin-bottom:18px">${button('Imprimeix el document','print','',false,'print')}${button('Tanca','dialog-close','',true)}</div>${markup}`,true);break;
