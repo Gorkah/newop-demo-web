@@ -59,6 +59,13 @@
         } catch (_) {return failure('STORAGE_ERROR','El navegador no ha pogut desar la foto. Comprova l’espai disponible.');}
         return success({attachment});
       },
+      imageSource({id,mimeType}) {
+        if (!allowedImages.includes(mimeType)) return null;
+        try {
+          const data=readFiles()[id];
+          return typeof data==='string' && /^[A-Za-z0-9+/]+=*$/.test(data) ? 'data:'+mimeType+';base64,'+data : null;
+        } catch (_) {return null;}
+      },
       async downloadAttachment(id) {
         const attachment = openStore().getState().workflow?.attachments.find(file => file.id === id);
         const data = readFiles()[id];

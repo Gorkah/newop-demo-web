@@ -222,7 +222,7 @@
 
   function closeDialog() {if (overlay.open) overlay.close();}
   overlay.addEventListener('close', () => {
-    if (!overlay.open) {invoicePreview = null;dialogSerial++;resetDialogState();}
+    if (!overlay.open) {invoicePreview = null;dialogSerial++;resetDialogState();$('#print-document').replaceChildren();}
     const opener = dialogOpener;
     queueMicrotask(() => {if (!overlay.open) (opener && opener.isConnected ? opener : $('h1', view) || view).focus();});
   });
@@ -302,13 +302,19 @@
   const selectedAttachments = form => $$('[name="attachmentIds"]:checked',form).map(el => el.value);
   function attachmentList(ids) {
     const files = (ids || []).map(attachmentById).filter(Boolean);
-    return files.length ? `<ul class="attachment-list">${files.map(a => `<li>${button(a.filename,'download-attachment',a.id,true)}<span>${escape(a.mimeType)} · ${new Intl.NumberFormat('ca-ES').format(a.sizeBytes)} B</span><small>Desat ${escape(formatDateTime(a.createdAt))} · SHA-256 <span class="hash-text">${escape(a.sha256)}</span></small></li>`).join('')}</ul>` : '<p class="small muted">Sense adjunts vinculats.</p>';
+    if (!files.length) return '<p class="small muted">Sense adjunts vinculats.</p>';
+    return `<ul class="attachment-list">${files.map(file=>{
+      const source=ai.imageSource(file);
+      return `<li>${source ? `<img class="attachment-thumb" src="${escape(source)}" alt="" width="86" height="62" loading="lazy">` : ''}
+        ${button(file.filename,'download-attachment',file.id,true,'download')}
+        <small>${escape(formatDateTime(file.createdAt))} · ${new Intl.NumberFormat('ca-ES').format(file.sizeBytes)} B</small></li>`;
+    }).join('')}</ul>`;
   }
   function attachmentChoices(selected=[]) {
     return workflow().attachments.length ? `<fieldset class="source-picker"><legend>Fotos d’aquest navegador (màxim 5 per registre)</legend>${workflow().attachments.map(a => `<label class="check-field compact"><input type="checkbox" name="attachmentIds" value="${escape(a.id)}"${selected.includes(a.id) ? ' checked' : ''}><span>${escape(a.filename)} · ${new Intl.NumberFormat('ca-ES').format(a.sizeBytes)} B</span></label>`).join('')}</fieldset>` : '<p class="small muted">Encara no has pujat arxius privats.</p>';
   }
-  function attachmentPicker() {
-    return `<details class="attachment-picker"><summary>Adjunta una foto</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Arxiu privat',input('attachmentFile','file','','accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Puja l’arxiu','upload-attachment','',true)}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
+  function attachmentPicker(withSample=false) {
+    return `<details class="attachment-picker"><summary>Adjunta una foto</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Foto',input('attachmentFile','file','','accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Adjunta la foto','upload-attachment','',true)}${withSample ? button('Usa una foto fictícia','sample-meeting-photo','',true) : ''}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
   }
   function humanReview(label='He revisat el contingut, les dates i els imports. Aquesta acció només registra dades de demostració.') {
     return `<label class="check-field"><input type="checkbox" name="reviewed" id="workflow-reviewed" aria-describedby="workflow-reviewed-error"><span>${escape(label)}<span class="field-error" id="workflow-reviewed-error"></span></span></label>`;
@@ -351,22 +357,22 @@
     return `<section class="panel">${panelHead('Cronologia del client','Hora de registre del navegador; les correccions es desen com una entrada nova.',button('Afegeix una entrada','new-client-note',clientId || '',true,'plus'))}<div class="panel-body">${notes.length ? `<ol class="timeline">${notes.map(n=>`<li><div class="record-meta"><time>${escape(formatDateTime(n.createdAt))}</time><span class="badge">${escape(noteKinds[n.kind] || n.kind)}</span>${link('clients',n.clientId,clientName(n.clientId))}</div><p class="notes">${escape(n.text)}</p><div class="timeline-dates">${n.occurredOn ? `<span>Fet: ${date(n.occurredOn)}</span>` : ''}${n.dueDate ? `<span>Venciment: ${date(n.dueDate)}</span>` : ''}</div>${attachmentList(n.attachmentIds)}${n.sourceRefs?.length ? `<div class="source-links">${workflowSources(n.sourceRefs)}</div>` : ''}</li>`).join('')}</ol>` : empty('Cada canvi, amb el seu moment','Afegeix notes, canvis, proves i lliuraments sense sobreescriure el fil anterior.')}</div></section>`;
   }
   function renderCalendar() {
-    const today = new Date(serverToday() + 'T12:00:00Z');
-    const start = /^\d{4}-\d{2}-\d{2}$/.test(route.id || '') ? new Date(route.id + 'T12:00:00Z') : today;
+    const today = serverToday();
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(route.id || '') ? new Date(route.id + 'T12:00:00Z') : new Date(today + 'T12:00:00Z');
     if (!Number.isFinite(start.getTime())) return notFound();
     start.setUTCDate(start.getUTCDate() - (start.getUTCDay()+6)%7);
     const day = offset => new Date(start.getTime()+offset*86400000).toISOString().slice(0,10);
     const events = [
-      ...state.tasks.filter(t=>t.status==='pending').map(t=>({on:t.dueDate,text:t.text,client:t.clientId,module:'seguiment',id:t.id})),
-      ...workflow().clientNotes.filter(n=>['fitting','delivery'].includes(n.kind)).map(n=>({on:n.dueDate || n.occurredOn,text:n.text,client:n.clientId,module:'clients',id:n.clientId})),
-      ...workflow().workshopEntries.map(w=>({on:w.dueDate,text:w.workshopName+' · '+w.text,client:w.clientId,module:'albarans',id:w.deliveryNoteId}))
+      ...state.tasks.filter(t=>t.status==='pending').map(t=>({type:'Seguiment',on:t.dueDate,text:t.text,client:t.clientId,module:'seguiment',id:t.id})),
+      ...workflow().clientNotes.filter(n=>['fitting','delivery'].includes(n.kind)).map(n=>({type:noteKinds[n.kind],on:n.dueDate || n.occurredOn,text:n.text,client:n.clientId,module:'clients',id:n.clientId})),
+      ...workflow().workshopEntries.map(w=>({type:'Taller',on:w.dueDate,text:w.workshopName+' · '+w.text,client:w.clientId,module:'albarans',id:w.deliveryNoteId}))
     ];
     const nav = (offset,label) => `<a class="button secondary" href="${path('calendari',day(offset))}">${label}</a>`;
     const days = ['Dilluns','Dimarts','Dimecres','Dijous','Divendres','Dissabte','Diumenge'];
     return heading('Calendari','Tasques, proves i lliuraments en una agenda setmanal.',button('Nou seguiment','new-task','',false,'plus')+button('Afegeix una entrada','new-client-note','',true,'plus'))+
       `<section class="panel pad"><div class="actions">${nav(-7,'Setmana anterior')}<a class="button secondary" href="#/calendari">Avui</a>${nav(7,'Setmana següent')}</div><h2>${date(day(0))} - ${date(day(6))}</h2><div class="calendar-grid">${days.map((name,index)=>{
         const items = events.filter(event=>event.on===day(index));
-        return `<article class="record-card"><h3>${name} · ${date(day(index))}</h3>${items.length ? `<ul>${items.map(event=>`<li>${link(event.module,event.id,event.text)}<br><small>${escape(clientName(event.client))}</small></li>`).join('')}</ul>` : '<p class="muted">Sense cites</p>'}</article>`;
+        return `<article class="record-card${day(index)===today ? ' calendar-today' : ''}"><h3>${name} · ${date(day(index))}${day(index)===today ? ' <span class="badge">Avui</span>' : ''}</h3>${items.length ? `<ul>${items.map(event=>`<li>${link(event.module,event.id,event.text)}<br><small>${escape(event.type)} · ${escape(clientName(event.client))}</small></li>`).join('')}</ul>` : '<p class="muted">Sense cites</p>'}</article>`;
       }).join('')}</div></section>`;
   }
   function renderTasks() {return renderTasksBase() + (!route.id ? timelinePanel() : '');}
@@ -441,7 +447,7 @@
     return `<section class="panel" id="taller-setmana">${panelHead('La setmana del taller','Dates previstes i lliuraments registrats, sense interpretar fotos.',button('Nova feina de taller','new-workshop','',true,'plus'))}<div class="panel-body"><form data-form="workshop-range" class="toolbar" novalidate>${field('from','Des del dia',input('from','date',from,'required'))}${field('to','Fins al dia',input('to','date',to,'required'))}<button class="button secondary" type="submit">Mostra el període</button>${button('Imprimeix el resum','print-workshop','',true,'print')}${formError}</form>${entries.length ? table(['Data prevista','Taller / client','Feina','Estat','Lliurament / acció'],entries.map(e=>`<tr><td>${date(e.dueDate)}</td><td>${escape(e.workshopName)}<span class="cell-secondary">${link('clients',e.clientId,clientName(e.clientId))}</span></td><td class="wrap-cell">${escape(e.text)}${e.deliveryNoteId ? `<span class="cell-secondary">${link('albarans',e.deliveryNoteId,state.deliveryNotes.find(d=>d.id===e.deliveryNoteId)?.number || e.deliveryNoteId)}</span>` : ''}${attachmentList(e.attachmentIds)}</td><td>${e.status==='delivered' ? 'Lliurada' : 'Pendent'}</td><td>${e.status==='delivered' ? date(e.deliveredOn) + `<small class="cell-secondary">Registrat ${escape(formatDateTime(e.deliveredAt))}</small>` : button('Registra el lliurament','complete-workshop',e.id,true)}</td></tr>`)) : empty('Sense feines en aquest període','Canvia les dates o registra una feina de taller.')}<p class="small muted">Resum del ${date(from)} al ${date(to)}. La negociació amb els tallers continua pel canal habitual.</p></div></section>`;
   }
   function openMeeting(clientId='') {
-    openDialog('Desa la reunió',dialogForm('record-meeting',`${field('clientId','Client fictici',clientOptions(clientId))}${field('notes','Notes originals revisades','<textarea id="notes" name="notes" required maxlength="2000" rows="5" aria-describedby="notes-error" autofocus></textarea>')}${field('summary','Resum humà de la reunió','<textarea id="summary" name="summary" required maxlength="2000" rows="3" aria-describedby="summary-error"></textarea>')}${attachmentPicker()}${humanReview('He revisat el resum i les fonts.')}`,'Desa la reunió'),true);
+    openDialog('Desa la reunió',dialogForm('record-meeting',`${field('clientId','Client fictici',clientOptions(clientId))}${field('notes','Notes originals revisades','<textarea id="notes" name="notes" required maxlength="2000" rows="5" aria-describedby="notes-error" autofocus></textarea>')}${field('summary','Resum humà de la reunió','<textarea id="summary" name="summary" required maxlength="2000" rows="3" aria-describedby="summary-error"></textarea>')}${attachmentPicker(true)}${humanReview('He revisat el resum i les fonts.')}`,'Desa la reunió'),true);
   }
   function manualRow(line={}) {
     const n=++manualRowSequence;
@@ -484,7 +490,11 @@
   function openCredit(invoiceId) {
     const invoice=state.invoices.find(i=>i.id===invoiceId), quotes=new Set(invoice.deliveryNoteIds.map(id=>state.deliveryNotes.find(d=>d.id===id)?.quoteId));
     const options=workflow().proformas.filter(p=>p.clientId===invoice.clientId && quotes.has(p.quoteId)).map(p=>{const b=balance('proforma',p.id);return b?.availableCreditCents>0 ? [p.id,p.number+' · disponible '+money(b.availableCreditCents)] : null;}).filter(Boolean);
-    openDialog('Aplica una anticipació cobrada',dialogForm('credit',`${balanceMarkup('invoice',invoiceId)}${options.length ? `${field('proformaId','Proforma del mateix pressupost',select('proformaId',options,options[0][0]))}${field('amount','Import a aplicar (€)',input('amount','text','','required inputmode="decimal"'))}${humanReview('He revisat l’origen i l’import. No es pot aplicar més del que s’ha cobrat ni del saldo de la factura.')}` : '<p class="hint">No hi ha anticipacions cobrades disponibles del mateix pressupost. Registra primer el cobrament de la proforma corresponent.</p>'}`,options.length ? 'Aplica l’anticipació' : 'Comprova el saldo',`data-id="${escape(invoiceId)}"`));
+    if(!options.length) {
+      openDialog('Anticipacions disponibles',balanceMarkup('invoice',invoiceId)+'<p class="hint">Encara no hi ha anticipacions cobrades per a aquest pressupost.</p><div class="form-actions">'+button('Tanca','dialog-close','',true)+'</div>');
+      return;
+    }
+    openDialog('Aplica una anticipació cobrada',dialogForm('credit',`${balanceMarkup('invoice',invoiceId)}${field('proformaId','Proforma del mateix pressupost',select('proformaId',options,options[0][0]))}${field('amount','Import a aplicar (€)',input('amount','text','','required inputmode="decimal"'))}${humanReview('He revisat l’origen i l’import. No es pot aplicar més del que s’ha cobrat ni del saldo de la factura.')}`,'Aplica l’anticipació',`data-id="${escape(invoiceId)}"`));
   }
   function openWorkshop() {
     openDialog('Una feina al taller',dialogForm('workshop',`<div class="form-grid">${field('clientId','Client fictici',clientOptions(''))}${field('deliveryNoteId','Albarà (opcional)',select('deliveryNoteId',[['','Sense albarà'],...state.deliveryNotes.map(d=>[d.id,d.number+' · '+clientName(d.clientId)])],''))}${field('workshopName','Nom del taller fictici',input('workshopName','text','','required maxlength="160"'))}${field('dueDate','Lliurament previst',input('dueDate','date',serverToday(),'required'))}</div>${field('text','Feina prevista','<textarea name="text" id="text" required maxlength="2000" rows="4" aria-describedby="text-error"></textarea>')}${attachmentPicker()}<p class="field-help">Desa un text revisat. Una foto adjunta no es converteix automàticament en una ordre de producció.</p>`,'Desa la feina'),true);
@@ -496,16 +506,28 @@
     $('#print-document').innerHTML=markup;
     openDialog(title,`<div class="actions">${button('Imprimeix el document','print','',false,'print')}</div>${markup}`,true);
   }
-  async function uploadAttachment(form) {
+  function sampleMeetingPhoto() {
+    const canvas=document.createElement('canvas');
+    canvas.width=600;canvas.height=400;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#f4eddf';ctx.fillRect(0,0,600,400);
+    ctx.strokeStyle='#d6c8b5';
+    for(let y=85;y<390;y+=43){ctx.beginPath();ctx.moveTo(30,y);ctx.lineTo(570,y);ctx.stroke();}
+    ctx.fillStyle='#302b25';ctx.font='bold 21px sans-serif';ctx.fillText('NEW OP · NOTES FICTÍCIES',35,55);
+    ctx.font='italic 26px serif';
+    ['Reunió de mostra','25 camises de lli','Preparar el pressupost'].forEach((line,index)=>ctx.fillText(line,45,119+43*index));
+    return new Promise(resolve=>canvas.toBlob(blob=>resolve(new File([blob],'llibreta-de-mostra.png',{type:'image/png'})),'image/png'));
+  }
+  async function uploadAttachment(form, file=form.elements.attachmentFile?.files?.[0]) {
     clearErrors(form);
-    const file=form.elements.attachmentFile?.files?.[0];
     if (!file) throw new InputError('Selecciona un arxiu.','attachmentFile');
     if (!file.size || file.size>1048576) throw new InputError('Cada arxiu ha de tenir entre 1 byte i 1 MiB.','attachmentFile');
     if (selectedAttachments(form).length>=5) throw new InputError('Aquest registre ja té 5 arxius seleccionats.','attachmentFile');
     if (attachmentJob || commandBusy) return;
     const job={controller:new AbortController(),form,serial:dialogSerial};attachmentJob=job;
     const run=$('[data-action="upload-attachment"]',form), cancel=$('[data-action="cancel-attachment"]',form), submit=$('[type="submit"]',form);
-    run.disabled=true;submit.disabled=true;cancel.hidden=false;setStatus('attachment-status','Pujant l’arxiu privat… El registre encara no s’ha desat.');
+    const sample=$('[data-action="sample-meeting-photo"]',form);
+    run.disabled=true;if(sample)sample.disabled=true;submit.disabled=true;cancel.hidden=false;setStatus('attachment-status','Pujant l’arxiu privat… El registre encara no s’ha desat.');
     try {
       const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
       for (let i=0;i<bytes.length;i+=8192) binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
@@ -529,7 +551,7 @@
       $('#attachment-choices',form).innerHTML=attachmentChoices(selected);
       attachmentPending=null;form.elements.attachmentFile.value='';
       setStatus('attachment-status','Arxiu pujat al teu espai i seleccionat. Desa el formulari per vincular-lo al registre.');
-    } finally {if (attachmentJob===job) attachmentJob=null;if (run.isConnected) run.disabled=false;if (submit.isConnected) submit.disabled=false;if (cancel.isConnected) cancel.hidden=true;}
+    } finally {if (attachmentJob===job) attachmentJob=null;if (run.isConnected) run.disabled=false;if(sample?.isConnected)sample.disabled=false;if (submit.isConnected) submit.disabled=false;if (cancel.isConnected) cancel.hidden=true;}
   }
   async function workflowAction(action,id,el) {
     switch(action) {
@@ -549,6 +571,18 @@
       case 'receipt-proforma':openReceipt('proforma',id);break;
       case 'apply-credit':openCredit(id);break;
       case 'new-workshop':openWorkshop();break;
+      case 'sample-meeting-photo': {
+        const form=el.closest('form');
+        if(form.elements.attachmentFile.files.length) throw new InputError('Adjunta la foto seleccionada o treu-la abans de fer servir la mostra.','attachmentFile');
+        const file=await sampleMeetingPhoto();
+        if(!form.isConnected || !overlay.open)return true;
+        await uploadAttachment(form,file);
+        if (form.isConnected && Array.from(form.querySelectorAll('[name="attachmentIds"]:checked')).some(field=>attachmentById(field.value)?.filename===file.name)) {
+          form.elements.notes.value ||= 'El client demana 25 camises de lli.';
+          form.elements.summary.value ||= '25 camises de lli';
+        }
+        break;
+      }
       case 'upload-attachment':await uploadAttachment(el.closest('form'));break;
       case 'cancel-attachment':attachmentJob?.controller.abort();break;
       case 'download-attachment': {
@@ -590,6 +624,10 @@
   }
   async function workflowSubmit(form,data) {
     const get=key=>String(data.get(key) ?? ''), ids=selectedAttachments(form);
+    if (form.elements.attachmentFile?.files.length) {
+      form.elements.attachmentFile.closest('details').open=true;
+      throw new InputError('Prem «Adjunta la foto» per vincular el fitxer abans de desar.','attachmentFile');
+    }
     if (ids.length>5) throw new InputError('Selecciona com a màxim 5 adjunts.','attachmentFile');
     switch(form.dataset.form) {
       case 'record-meeting':checkedHuman(data);await commit({type:'RECORD_MEETING',clientId:get('clientId'),notes:get('notes'),summary:get('summary'),attachmentIds:ids},form,'Reunió desada amb el resum i les fonts.');break;
@@ -822,7 +860,8 @@
 
   function paperDocument(entity, kind) {
     const delivery = kind === 'albarans';
-    const title = delivery ? 'Albarà' : 'Pressupost';
+    const invoice = kind === 'facturacio';
+    const title = invoice ? 'Factura' : delivery ? 'Albarà' : 'Pressupost';
     const client = state.clients.find(item => item.id === entity.clientId);
     const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
     const rows = entity.lines.map(line => `<tr>
@@ -846,9 +885,10 @@
 
   function openPaperDocument(entity, kind) {
     const delivery = kind === 'albarans';
-    const title = delivery ? 'Albarà' : 'Pressupost';
+    const invoice = kind === 'facturacio';
+    const title = invoice ? 'Factura' : delivery ? 'Albarà' : 'Pressupost';
     const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
-    const markup = paperDocument(entity,kind);
+    const markup = invoice ? documentMarkup(entity,kind) : paperDocument(entity,kind);
     $('#print-document').innerHTML = markup;
     let next = '';
     if (delivery && entity.status === 'workshop') next = 'ready';
@@ -856,14 +896,14 @@
     const action = next
       ? `<button type="button" class="button" data-action="delivery-status" data-id="${escape(entity.id)}" data-status="${next}">${next === 'ready' ? 'Marca a punt' : 'Marca lliurat'}</button>`
       : !delivery && entity.status === 'draft' ? button('Torna a l’esborrany','dialog-close') : '';
-    openDialog(`${clientName(entity.clientId)} · ${units} unitats`,`
+    openDialog(`${clientName(entity.clientId)} · ${invoice ? money(entity.totals.totalCents) : units+' unitats'}`,`
       <div class="paper-stage">${markup}</div>
       <footer class="paper-actions">${button('Imprimeix / Desa en PDF','print','',true,'print')}${action}</footer>`,true);
     overlay.classList.add('document-drawer');
     const heading = $('#dialog-title',overlay);
     const wrapper = document.createElement('div');
     heading.before(wrapper);
-    wrapper.innerHTML = `<p class="drawer-kicker">${title} ${escape(entity.number)} ${badge(entity.status)}</p>`;
+    wrapper.innerHTML = `<p class="drawer-kicker">${title} ${escape(entity.number)} ${badge(entity.paymentStatus || entity.status)}</p>`;
     wrapper.append(heading);
     wrapper.insertAdjacentHTML('beforeend',`<p class="drawer-date">${date(entity.createdOn)}</p>`);
     heading.focus();
@@ -875,7 +915,7 @@
     if (entity.quoteId) sources += ' · ' + link('pressupostos',entity.quoteId,state.quotes.find(q => q.id === entity.quoteId)?.number || entity.quoteId);
     if (entity.purchaseIds) sources += ' · ' + entity.purchaseIds.map(id => {const p = workflow().purchases.find(x => x.id === id);return p ? escape(p.reference + ' · ' + p.supplierName) : escape(id);}).join(' · ');
     if (entity.deliveryNoteIds) sources += ' · ' + entity.deliveryNoteIds.map(id => link('albarans',id,state.deliveryNotes.find(d => d.id === id)?.number || id)).join(' · ');
-    return `<article class="print-sheet"><header class="document-header"><div><img src="assets/newop-logo.png" width="150" height="45" alt="NEW OP"><p>ESPAI DE TALLER · DEMO LOCAL</p></div><div><h2>${title}</h2><strong>${escape(entity.number)}</strong><p>${date(entity.createdOn)} · ${badge(entity.paymentStatus || entity.status)}</p></div></header><div class="document-warning"><strong>Simulació · Dades fictícies · Sense validesa fiscal o legal.</strong><br>Imports, impostos i referències exclusivament il·lustratius. Cap enviament, signatura ni pagament real.</div><dl class="details-meta"><div><dt>Client fictici</dt><dd>${escape(clientName(entity.clientId))}</dd></div><div><dt>Correu sintètic</dt><dd>${escape(state.clients.find(c => c.id === entity.clientId)?.email || 'Sense correu')}</dd></div></dl>${linesTable(entity.lines)}${totals(entity.totals,entity.taxRateBps)}${entity.notes ? `<h3>Notes originals fictícies</h3><p class="notes">${escape(entity.notes)}</p>` : ''}<footer class="document-footer">Fonts locals: ${sources}<br>Escenari fictici del 05/11/2026 · Document HTML imprimible de demostració.<br>NEW OP · Demo preparada per NexaVision AI.</footer></article>`;
+    return `<article class="print-sheet paper-document"><header class="document-header"><div><img src="assets/newop-logo.png" width="150" height="45" alt="NEW OP"><p>ESPAI DE TALLER · DEMO LOCAL</p></div><div><h2>${title}</h2><strong>${escape(entity.number)}</strong><p>${date(entity.createdOn)} · ${badge(entity.paymentStatus || entity.status)}</p></div></header><div class="document-warning"><strong>Simulació · Dades fictícies · Sense validesa fiscal o legal.</strong><br>Imports, impostos i referències exclusivament il·lustratius. Cap enviament, signatura ni pagament real.</div><dl class="details-meta"><div><dt>Client fictici</dt><dd>${escape(clientName(entity.clientId))}</dd></div><div><dt>Correu sintètic</dt><dd>${escape(state.clients.find(c => c.id === entity.clientId)?.email || 'Sense correu')}</dd></div></dl>${linesTable(entity.lines)}${totals(entity.totals,entity.taxRateBps)}<section class="paper-notes"><h4>Cobraments i saldo</h4><p>Venciment: ${entity.dueDate ? date(entity.dueDate) : 'Sense data de venciment'}</p>${balanceMarkup('invoice',entity.id)}</section>${entity.notes ? `<h3>Notes originals fictícies</h3><p class="notes">${escape(entity.notes)}</p>` : ''}<footer class="document-footer">Fonts locals: ${sources}<br>Escenari fictici del 05/11/2026 · Document HTML imprimible de demostració.<br>NEW OP · Demo preparada per NexaVision AI.</footer></article>`;
   }
 
   /* ===== Capa IA i connectors (RF-010 a RF-014). Tot el càlcul i la validació de negoci resten al servidor i a demo.js. ===== */
@@ -1552,10 +1592,7 @@
         const collection = {pressupostos:state.quotes,albarans:state.deliveryNotes,facturacio:state.invoices}[route.module];
         const entity = collection?.find(item => item.id === id);
         if (!entity) {notify('No s’ha trobat el document.',true);break;}
-        if (route.module !== 'facturacio') {openPaperDocument(entity,route.module);break;}
-        const markup = documentMarkup(entity,route.module);
-        $('#print-document').innerHTML = markup;
-        openDialog('Document de demostració',`<div class="actions" style="margin-bottom:18px">${button('Imprimeix el document','print','',false,'print')}${button('Tanca','dialog-close','',true)}</div>${markup}`,true);break;
+        openPaperDocument(entity,route.module);break;
       }
       case 'print':window.print();break;
       case 'ai-quote-run': {const form = el.closest('form');if (form) await runQuoteAnalysis(form);break;}

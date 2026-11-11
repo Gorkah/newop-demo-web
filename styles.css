@@ -90,3 +90,6 @@ dialog.document-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;display:fl
 .panel table tbody tr:hover{background:#faf7f1}
 .paper-document table tbody tr:hover{background:transparent}
 @media(max-width:480px){.toolbar label{min-width:min(100%,150px)}}
+.attachment-thumb{display:block;width:86px;height:62px;object-fit:cover;border:1px solid var(--line);border-radius:6px}
+.calendar-today{border-color:#a27846;background:#fbf2e5}
+@media print{body:not(:has(#print-document > *)) #app{display:block!important}}
