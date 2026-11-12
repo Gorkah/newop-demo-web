@@ -1023,7 +1023,7 @@
     w.meetings.forEach(e=>{check(e,['id','clientId','notes','summary','attachmentIds','createdAt','quoteIds'],'meetings');client(e);at(e);txt(e.notes);txt(e.summary);attachmentIds(s,e.attachmentIds);if (!Array.isArray(e.quoteIds)) bad('workflow.meetings.quoteIds');for (const id of e.quoteIds) {if (linkedQuotes.has(id)||!s.quotes.some(q=>q.id===id&&q.clientId===e.clientId)) bad('workflow.meetings.quoteIds');linkedQuotes.add(id);}});
     w.workshopEntries.forEach(e=>{check(e,['id','clientId','deliveryNoteId','workshopName','text','dueDate','status','createdAt','deliveredAt','deliveredOn','attachmentIds'],'workshopEntries');client(e);at(e);txt(e.workshopName,120);txt(e.text);dateValue(e.dueDate,'dueDate');attachmentIds(s,e.attachmentIds);if (e.deliveryNoteId!==null&&!s.deliveryNotes.some(d=>d.id===e.deliveryNoteId&&d.clientId===e.clientId)) bad('workflow.deliveryNoteId');if (!['pending','delivered'].includes(e.status) || (e.status==='pending'?(e.deliveredAt!==null||e.deliveredOn!==null):(!validStamp(e.deliveredAt)||!isDate(e.deliveredOn)))) bad('workflow.workshopEntries.status');});
     const purchases=new Set();
-    w.purchases.forEach(e=>{check(e,['id','clientId','supplierName','reference','purchasedOn','description','quantity','unitCostCents','taxRateBps','dueDate','attachmentIds','totals','invoiceId','paymentStatus','paidOn','paymentReference','createdAt'],'purchases');client(e);at(e);txt(e.supplierName,120);txt(e.reference,120);txt(e.description,500);dateValue(e.purchasedOn,'purchasedOn');dateValue(e.dueDate,'dueDate',true);attachmentIds(s,e.attachmentIds);const ref=normName(e.supplierName)+'/'+normName(e.reference)+'/'+e.clientId;if (purchases.has(ref)) bad('workflow.purchases.reference');purchases.add(ref);if (!isQty(e.quantity)||!isMoney(e.unitCostCents)||!isInt0(e.taxRateBps)||e.taxRateBps>10000) bad('workflow.purchases.amount');const totals=totalsOf([purchaseLine(e)],e.taxRateBps);exact(e.totals,['baseCents','taxCents','totalCents'],'workflow.purchases.totals');for (const k of Object.keys(totals)) if (e.totals[k]!==totals[k]) bad('workflow.purchases.totals');const inv=s.invoices.find(i=>i.origin==='purchase'&&i.purchaseIds.includes(e.id));if (e.invoiceId!==null ? !inv||inv.id!==e.invoiceId : !!inv) bad('workflow.purchases.invoiceId');if (!['pending','paid_recorded'].includes(e.paymentStatus)||(e.paymentStatus==='pending'?(e.paidOn!==null||e.paymentReference!==null):(!isDate(e.paidOn)||!isStr(e.paymentReference)))) bad('workflow.purchases.paymentStatus');});
+    w.purchases.forEach(e=>{optionalExact(e,['id','clientId','supplierName','reference','purchasedOn','description','quantity','unitCostCents','taxRateBps','dueDate','attachmentIds','totals','invoiceId','paymentStatus','paidOn','paymentReference','createdAt'],['receiptCharge'],'workflow.purchases');if(e.receiptCharge!==undefined && (e.receiptCharge!==true || e.paymentStatus!=='pending' || !s.phaseOne?.suppliers.some(d=>d.receipt===true&&d.lines.some(l=>l.purchaseId===e.id)))) bad('workflow.purchases.receiptCharge');client(e);at(e);txt(e.supplierName,120);txt(e.reference,120);txt(e.description,500);dateValue(e.purchasedOn,'purchasedOn');dateValue(e.dueDate,'dueDate',true);attachmentIds(s,e.attachmentIds);const ref=normName(e.supplierName)+'/'+normName(e.reference)+'/'+e.clientId;if (purchases.has(ref)) bad('workflow.purchases.reference');purchases.add(ref);if (!isQty(e.quantity)||!isMoney(e.unitCostCents)||!isInt0(e.taxRateBps)||e.taxRateBps>10000) bad('workflow.purchases.amount');const totals=totalsOf([purchaseLine(e)],e.taxRateBps);exact(e.totals,['baseCents','taxCents','totalCents'],'workflow.purchases.totals');for (const k of Object.keys(totals)) if (e.totals[k]!==totals[k]) bad('workflow.purchases.totals');const inv=s.invoices.find(i=>i.origin==='purchase'&&i.purchaseIds.includes(e.id));if (e.invoiceId!==null ? !inv||inv.id!==e.invoiceId : !!inv) bad('workflow.purchases.invoiceId');if (!['pending','paid_recorded'].includes(e.paymentStatus)||(e.paymentStatus==='pending'?(e.paidOn!==null||e.paymentReference!==null):(!isDate(e.paidOn)||!isStr(e.paymentReference)))) bad('workflow.purchases.paymentStatus');});
     const profiles=new Set();w.billingProfiles.forEach(e=>{check(e,['clientId','isNewClient','paymentTermDays','depositBps','updatedAt'],'billingProfiles');client(e);if (profiles.has(e.clientId)||typeof e.isNewClient!=='boolean'||!isInt0(e.paymentTermDays)||e.paymentTermDays>365||!isInt0(e.depositBps)||e.depositBps>10000||!validStamp(e.updatedAt)) bad('workflow.billingProfiles');profiles.add(e.clientId);});
     const proQuotes=new Set(),proNumbers=new Set();w.proformas.forEach(e=>{check(e,['id','number','quoteId','clientId','amountCents','depositBps','quoteTotalCents','createdOn','dueDate','createdAt'],'proformas');client(e);at(e);dateValue(e.createdOn,'createdOn');dateValue(e.dueDate,'dueDate');txt(e.number,80);const q=s.quotes.find(q=>q.id===e.quoteId&&q.clientId===e.clientId&&q.status!=='draft');if (!q||proQuotes.has(e.quoteId)||proNumbers.has(e.number)||!isQty(e.depositBps)||e.depositBps>10000||q.totals.totalCents!==e.quoteTotalCents||e.amountCents!==Number((BigInt(e.quoteTotalCents)*BigInt(e.depositBps)+5000n)/10000n)||!isQty(e.amountCents)) bad('workflow.proformas');proQuotes.add(e.quoteId);proNumbers.add(e.number);});
     const receiptRefs=new Set();w.receipts.forEach(e=>{check(e,['id','targetType','targetId','clientId','amountCents','receivedOn','reference','createdAt'],'receipts');client(e);at(e);dateValue(e.receivedOn,'receivedOn');txt(e.reference,120);const target=e.targetType==='invoice'?s.invoices.find(i=>i.id===e.targetId):e.targetType==='proforma'?w.proformas.find(i=>i.id===e.targetId):null;const ref=e.clientId+'/'+normName(e.reference);if (!target||target.clientId!==e.clientId||!isQty(e.amountCents)||receiptRefs.has(ref)) bad('workflow.receipts');receiptRefs.add(ref);});
@@ -1033,6 +1033,14 @@
     const sent=new Set(),response=new Set();w.quoteEvents.forEach(e=>{check(e,['id','quoteId','clientId','kind','occurredOn','createdAt','note'],'quoteEvents');client(e);at(e);dateValue(e.occurredOn,'occurredOn');if (typeof e.note!=='string'||e.note.length>500||!s.quotes.some(q=>q.id===e.quoteId&&q.clientId===e.clientId)||!['sent_simulated','response_recorded'].includes(e.kind)) bad('workflow.quoteEvents');const seen=e.kind==='sent_simulated'?sent:response;if (seen.has(e.quoteId)) bad('workflow.quoteEvents');seen.add(e.quoteId);});
   }
   const phaseOne = s => s.phaseOne ||= {production:[],suppliers:[]};
+  const receiptUnits = ['m','u.','kg'];
+  const receiptQuantity = line => String(line.quantityMilli/1000).replace('.', ',')+' '+line.unit;
+  function receiptEntry(s,c) {
+    const doc=phaseOne(s).suppliers.find(item=>item.id===c.id&&item.receipt===true);
+    const line=Number.isInteger(c.lineIndex)&&doc?.lines[c.lineIndex];
+    if(!line) fail('NOT_FOUND','id','Concepte de l’albarà no disponible.');
+    return {doc,line};
+  }
   const stages = ['Tall','Confecció','Planxa'];
   function checkCosting(c,path) {
     exact(c,['materials','trims','sewing','pressing','margin','discounts'],path);
@@ -1080,7 +1088,24 @@
     for(const doc of phase.suppliers) {
       if(!isStr(doc.reference)||!isStr(doc.supplierName)||!isDate(doc.createdOn)||!Array.isArray(doc.lines)||!doc.lines.length) bad('suppliers');
       attachmentIds(s,doc.attachmentIds);
+      if(doc.receipt===true && (typeof doc.orderReference!=='string'||doc.orderReference.length>80||!doc.attachmentIds.length||doc.lines.length>50)) bad('supplier.receipt');
       for(const line of doc.lines) {
+        if(doc.receipt===true) {
+          if(!isStr(line.description)||!line.description||line.description.length>160||
+            !isQty(line.quantityMilli)||line.quantityMilli>1000000000||!receiptUnits.includes(line.unit)||
+            typeof line.itemCode!=='string'||line.itemCode.length>80||typeof line.lot!=='string'||line.lot.length>80||
+            (line.unitCostCents!==null&&!isMoney(line.unitCostCents))||
+            !['pending','house','client'].includes(line.allocation)||
+            (line.allocation==='client' ? !s.clients.some(c=>c.id===line.clientId) : line.clientId!==null)) bad('supplier.receipt');
+          if(line.purchaseId!==null) {
+            const purchase=s.workflow?.purchases.find(p=>p.id===line.purchaseId);
+            if(line.allocation!=='client'||!purchase||purchase.receiptCharge!==true||
+              purchase.clientId!==line.clientId||purchase.quantity!==1||purchase.unitCostCents!==line.clientPriceCents||
+              purchase.supplierName!==doc.supplierName||purchase.reference!==doc.reference+' · '+(doc.lines.indexOf(line)+1)||
+              purchase.description!==line.description+' · '+receiptQuantity(line)) bad('supplier.charge');
+          } else if(line.clientPriceCents!==null) bad('supplier.charge');
+          continue;
+        }
         if(!isStr(line.description)||!isQty(line.quantity)||!isMoney(line.unitCostCents)) bad('supplier.lines');
         if(line.purchaseId && !s.workflow?.purchases.some(p=>p.id===line.purchaseId&&p.clientId===line.clientId&&p.quantity===line.quantity&&p.unitCostCents===line.unitCostCents)) bad('supplier.purchase');
         if(!line.purchaseId && line.clientId!==null) bad('supplier.client');
@@ -1163,6 +1188,64 @@
       const document={id,number:nextNumber(s,'deliveryNotes','ALB'),clientId:c.clientId,quoteId:null,createdOn:stamp(o).slice(0,10),status:'ready',lines,taxRateBps,totals:quoteTotals(s,lines),...(c.productionId?{productionId:c.productionId}:{})};
       s.deliveryNotes.push(document);return document;
     },
+    RECORD_SUPPLIER_RECEIPT(s,c,o) {
+      reviewed(c);
+      const docs=phaseOne(s).suppliers;
+      const reference=textValue(c.reference,'reference',100),supplierName=textValue(c.supplierName,'supplierName',120);
+      if(!reference||!supplierName) fail('VALIDATION_ERROR','reference','Indica el proveïdor i la referència.');
+      if(docs.some(d=>normName(d.reference)===normName(reference)&&normName(d.supplierName)===normName(supplierName))) fail('DUPLICATE_REFERENCE','reference','Aquest albarà ja està registrat.');
+      if(!Array.isArray(c.lines)||!c.lines.length||c.lines.length>50) fail('VALIDATION_ERROR','lines','Indica entre 1 i 50 conceptes.');
+      const ids=attachmentIds(s,c.attachmentIds),createdOn=dateValue(c.createdOn,'createdOn');
+      if(!ids.length) fail('VALIDATION_ERROR','attachmentFile','Adjunta el document del proveïdor.');
+      const lines=c.lines.map(row=>{
+        const description=textValue(row.description,'concept',160);
+        if(!description||!isQty(row.quantityMilli)||row.quantityMilli>1000000000||!receiptUnits.includes(row.unit)) fail('VALIDATION_ERROR','units','Revisa el concepte, la quantitat i la unitat.');
+        const unitCostCents=row.unitCostCents??null;
+        if(unitCostCents!==null&&!isMoney(unitCostCents)) fail('VALIDATION_ERROR','price','Revisa el cost de proveïdor.');
+        const allocation=row.allocation||'pending',clientId=row.clientId||null;
+        if(!['pending','house','client'].includes(allocation)||(allocation==='client')!==Boolean(clientId)) fail('VALIDATION_ERROR','allocation','Revisa l’assignació.');
+        if(clientId) clientCheck(s,clientId);
+        return {description,quantityMilli:row.quantityMilli,unit:row.unit,itemCode:row.itemCode ? textValue(row.itemCode,'itemCode',80) : '',lot:row.lot ? textValue(row.lot,'lot',80) : '',unitCostCents,allocation,clientId,clientPriceCents:null,purchaseId:null};
+      });
+      const doc={id:'sup-'+(++s.sequence),receipt:true,reference,supplierName,createdOn,attachmentIds:ids,lines,orderReference:c.orderReference ? textValue(c.orderReference,'orderReference',80) : ''};
+      docs.push(doc);
+      return doc;
+    },
+    ASSIGN_SUPPLIER_RECEIPT(s,c) {
+      reviewed(c);
+      const {doc,line}=receiptEntry(s,c);
+      if(line.allocation!=='pending') fail('INVALID_TRANSITION','id','Aquest concepte ja està assignat.');
+      if(c.clientId) {
+        clientCheck(s,c.clientId);
+        line.clientId=c.clientId;
+        line.allocation='client';
+      } else if(c.house===true) {
+        line.allocation='house';
+      } else fail('VALIDATION_ERROR','destination','Selecciona el client o la despesa de casa.');
+      return doc;
+    },
+    PRICE_SUPPLIER_RECEIPT(s,c,o) {
+      reviewed(c);
+      const {doc,line}=receiptEntry(s,c);
+      if(line.allocation!=='client'||line.purchaseId) fail('INVALID_TRANSITION','id','Cal un client assignat i un preu pendent.');
+      if(!isMoney(c.clientPriceCents)) fail('VALIDATION_ERROR','clientPrice','Indica l’import al client.');
+      const purchase=HANDLERS.CREATE_PURCHASE(s,{
+        clientId:line.clientId,supplierName:doc.supplierName,reference:doc.reference+' · '+(c.lineIndex+1),
+        purchasedOn:doc.createdOn,description:line.description+' · '+receiptQuantity(line),
+        quantity:1,unitCostCents:c.clientPriceCents,taxRateBps:s.catalog.taxRateBps,attachmentIds:doc.attachmentIds
+      },o);
+      purchase.receiptCharge=true;
+      line.clientPriceCents=c.clientPriceCents;
+      line.purchaseId=purchase.id;
+      return doc;
+    },
+    COST_SUPPLIER_RECEIPT(s,c) {
+      reviewed(c);
+      const {doc,line}=receiptEntry(s,c);
+      if(!isMoney(c.unitCostCents)) fail('VALIDATION_ERROR','price','Indica el cost unitari de proveïdor.');
+      line.unitCostCents=c.unitCostCents;
+      return doc;
+    },
     SAVE_SUPPLIER_DOCUMENT(s,c,o) {
       reviewed(c);
       const docs=phaseOne(s).suppliers;
@@ -1195,7 +1278,7 @@
     UPDATE_QUOTE_LINES(s,c) {const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');if(q.status!=='draft')fail('INVALID_TRANSITION','id','Només es poden editar esborranys.');if(c.expectedQuoteRevision!==undefined&&c.expectedQuoteRevision!==q.revision)fail('STALE_REVIEW','expectedQuoteRevision','El pressupost ha canviat.');if(c.tariff!==undefined){if(!TARIFF_CODES.includes(c.tariff))fail('VALIDATION_ERROR','tariff','Selecciona A, B o C.');q.tariff=c.tariff;}const lines=manualLines(s,c.lines,q.id,q.lines);for(const l of lines)if(l.priceMode==='tariff')l.unitPriceCents=bandPrice(tariffByCode(s,q.tariff),l.quantity);applySavedCostings(q,lines);q.lines=lines;q.totals=quoteTotals(s,lines);q.revision++;q.reviewedRevision=null;return q;},
     CREATE_PURCHASE(s,c,o) {clientCheck(s,c.clientId);const e={id:nextId(s,'cmp','purchases'),clientId:c.clientId,supplierName:textValue(c.supplierName,'supplierName',120),reference:textValue(c.reference,'reference',120),purchasedOn:dateValue(c.purchasedOn,'purchasedOn'),description:textValue(c.description,'description',500),quantity:c.quantity,unitCostCents:c.unitCostCents,taxRateBps:c.taxRateBps,dueDate:dateValue(c.dueDate,'dueDate',true),attachmentIds:attachmentIds(s,c.attachmentIds),invoiceId:null,paymentStatus:'pending',paidOn:null,paymentReference:null,createdAt:stamp(o)};if(!isQty(e.quantity)||!isMoney(e.unitCostCents)||!isInt0(e.taxRateBps)||e.taxRateBps>10000)fail('VALIDATION_ERROR','quantity','Revisa els imports de la compra.');const w=workflow(s);if(w.purchases.some(p=>p.clientId===e.clientId&&normName(p.supplierName)===normName(e.supplierName)&&normName(p.reference)===normName(e.reference)))fail('DUPLICATE_PURCHASE','reference','Aquest registre de proveïdor ja està registrat.');e.totals=totalsOf([purchaseLine(e)],e.taxRateBps);w.purchases.push(e);return e;},
     CREATE_REBILL_INVOICE(s,c,o) {reviewed(c);revisionCheck(s,c);if(!Array.isArray(c.purchaseIds)||!c.purchaseIds.length||new Set(c.purchaseIds).size!==c.purchaseIds.length)fail('VALIDATION_ERROR','purchaseIds','Selecciona compres úniques.');const ps=c.purchaseIds.map(id=>wfGet(s,'purchases',id));if(ps.some(p=>p.invoiceId!==null))fail('ALREADY_INVOICED','purchaseIds','Una compra ja està refacturada.');if(ps.some(p=>p.clientId!==ps[0].clientId||p.taxRateBps!==ps[0].taxRateBps))fail('CLIENT_MISMATCH','purchaseIds','Les compres han de compartir client i impost.');const day=stamp(o).slice(0,10),lines=ps.map(purchaseLine),i={id:nextId(s,'fac','invoices'),number:nextNumber(s,'invoices','FAC'),clientId:ps[0].clientId,createdOn:day,dueDate:addDays(day,profile(s,ps[0].clientId).paymentTermDays),deliveryNoteIds:[],origin:'purchase',purchaseIds:ps.map(p=>p.id),lines,taxRateBps:ps[0].taxRateBps,totals:totalsOf(lines,ps[0].taxRateBps),reviewedAtRevision:s.revision,paymentStatus:'pending'};ps.forEach(p=>{p.invoiceId=i.id;});s.invoices.push(i);billingTotals(s.invoices);return i;},
-    MARK_PURCHASE_PAID(s,c,o) {reviewed(c);const p=wfGet(s,'purchases',c.id);if(p.paymentStatus!=='pending')fail('INVALID_TRANSITION','id','La compra ja té el pagament registrat.');p.paidOn=dateValue(c.paidOn,'paidOn');p.paymentReference=textValue(c.reference,'reference',120);p.paymentStatus='paid_recorded';stamp(o);return p;},
+    MARK_PURCHASE_PAID(s,c,o) {reviewed(c);const p=wfGet(s,'purchases',c.id);if(p.receiptCharge) fail('INVALID_TRANSITION','id','La repercussió al client no és una factura del proveïdor.');if(p.paymentStatus!=='pending')fail('INVALID_TRANSITION','id','La compra ja té el pagament registrat.');p.paidOn=dateValue(c.paidOn,'paidOn');p.paymentReference=textValue(c.reference,'reference',120);p.paymentStatus='paid_recorded';stamp(o);return p;},
     SET_CLIENT_BILLING_PROFILE(s,c,o) {clientCheck(s,c.clientId);if(typeof c.isNewClient!=='boolean'||!isInt0(c.paymentTermDays)||c.paymentTermDays>365||!isInt0(c.depositBps)||c.depositBps>10000)fail('VALIDATION_ERROR','depositBps','Revisa les condicions del client.');const w=workflow(s),p={clientId:c.clientId,isNewClient:c.isNewClient,paymentTermDays:c.paymentTermDays,depositBps:c.depositBps,updatedAt:stamp(o)},i=w.billingProfiles.findIndex(x=>x.clientId===c.clientId);if(i<0)w.billingProfiles.push(p);else w.billingProfiles[i]=p;return p;},
     CREATE_PROFORMA(s,c,o) {reviewed(c);revisionCheck(s,c);const q=getOrFail(s,'quotes',c.quoteId,'quoteId','Pressupost no disponible.');if(q.status==='draft'||q.phase==='initial')fail('INVALID_TRANSITION','quoteId','Cal un pressupost definitiu aprovat per preparar la proforma.');const w=workflow(s);if(w.proformas.some(p=>p.quoteId===q.id))fail('DUPLICATE_REFERENCE','quoteId','Aquest pressupost ja té proforma.');const bp=profile(s,q.clientId),amount=Number((BigInt(q.totals.totalCents)*BigInt(bp.depositBps)+5000n)/10000n);if(!isQty(amount))fail('VALIDATION_ERROR','depositBps','L’anticipo ha de ser positiu.');const at=stamp(o),p={id:nextId(s,'pro','proformas'),number:'PRO-2026-'+pad4(w.proformas.length+1),quoteId:q.id,clientId:q.clientId,amountCents:amount,depositBps:bp.depositBps,quoteTotalCents:q.totals.totalCents,createdOn:at.slice(0,10),dueDate:addDays(at.slice(0,10),bp.paymentTermDays),createdAt:at};w.proformas.push(p);return p;},
     RECORD_RECEIPT(s,c,o) {reviewed(c);if(!isQty(c.amountCents))fail('VALIDATION_ERROR','amountCents','Indica un import positiu en cèntims.');const b=balance(s,c.targetType,c.targetId);if(c.amountCents>b.outstandingCents)fail('AMOUNT_EXCEEDED','amountCents','L’import supera el saldo pendent.');const target=c.targetType==='invoice'?s.invoices.find(i=>i.id===c.targetId):wfGet(s,'proformas',c.targetId),w=workflow(s),reference=textValue(c.reference,'reference',120);if(w.receipts.some(r=>r.clientId===target.clientId&&normName(r.reference)===normName(reference)))fail('DUPLICATE_REFERENCE','reference','Aquest rebut ja està registrat.');const r={id:nextId(s,'rec','receipts'),targetType:c.targetType,targetId:c.targetId,clientId:target.clientId,amountCents:c.amountCents,receivedOn:dateValue(c.receivedOn,'receivedOn'),reference,createdAt:stamp(o)};w.receipts.push(r);if(c.targetType==='invoice'&&balance(s,'invoice',target.id).outstandingCents===0)target.paymentStatus='paid_simulated';return r;},
