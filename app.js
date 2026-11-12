@@ -767,7 +767,9 @@
   }
   function openCosting(id) {
     const q=state.quotes.find(q=>q.id===id);
-    const b=q.costing||{materials:0,trims:0,sewing:0,pressing:0,margin:0,discounts:[0,0,0,0]};
+    const defaultCost={materials:0,trims:0,sewing:0,pressing:0,margin:0,discounts:[0,0,0,0]};
+    const costFor=id=>q.lineCostings?.[id] || (q.lines.length===1 ? q.costing : null) || defaultCost;
+    const b=costFor(q.lines[0].id);
     const entries=[['materials','Teixit per unitat (€)'],['trims','Fornitures per unitat (€)'],['sewing','Confecció per unitat (€)'],['pressing','Planxa per unitat (€)'],['margin','Recàrrec de gestió (%)']];
     const textAmount=(name,label,amount)=>field(name,label,input(name,'text',decimalMoney(amount),'inputmode="decimal" required'));
     openDialog('Escandall i condicions',dialogForm('quote-costing',
@@ -791,6 +793,12 @@
         }).join('')+'</ul>';
       } catch (_) {$('#costing-preview',form).textContent='Revisa els imports i els percentatges.';}
     };
+    form.elements.lineId.addEventListener('change',()=>{
+      const costing=costFor(form.elements.lineId.value);
+      for(const [key] of entries)form.elements[key].value=decimalMoney(costing[key]);
+      [25,50,100,300].forEach((qty,i)=>{form.elements['discount'+qty].value=decimalMoney(costing.discounts[i]);});
+      preview();
+    });
     form.addEventListener('input',preview);preview();
   }
   function productionTable(rows) {

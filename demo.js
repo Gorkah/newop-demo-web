@@ -372,10 +372,17 @@
     const numbers = new Set();
     s.quotes.forEach((q, i) => {
       const p = 'quotes[' + i + ']';
-      optionalExact(q, ['id', 'number', 'clientId', 'createdOn', 'notes', 'tariff', 'status', 'revision', 'reviewedRevision', 'lines', 'taxRateBps', 'totals'], ['phase','initialQuoteId','terms','costing'], p);
+      optionalExact(q, ['id', 'number', 'clientId', 'createdOn', 'notes', 'tariff', 'status', 'revision', 'reviewedRevision', 'lines', 'taxRateBps', 'totals'], ['phase','initialQuoteId','terms','costing','lineCostings'], p);
       if (q.phase !== undefined && !['initial','final'].includes(q.phase)) bad(p+'.phase');
       if (q.terms !== undefined && (typeof q.terms!=='string'||q.terms.length>1200)) bad(p+'.terms');
       if (q.costing !== undefined) checkCosting(q.costing,p+'.costing');
+      if (q.lineCostings !== undefined) {
+        if(!isObj(q.lineCostings)) bad(p+'.lineCostings');
+        for(const [id,cost] of Object.entries(q.lineCostings)) {
+          if(!q.lines.some(line=>line.id===id)) bad(p+'.lineCostings');
+          checkCosting(cost,p+'.lineCostings');
+        }
+      }
       if (q.initialQuoteId !== undefined && (q.phase!=='final' || !s.quotes.some(x=>x.id===q.initialQuoteId && x.clientId===q.clientId && x.phase==='initial' && x.status!=='draft'))) bad(p+'.initialQuoteId');
       if (!isStr(q.number) || numbers.has(q.number)) bad(p + '.number');
       numbers.add(q.number);
@@ -820,6 +827,7 @@
           unitPriceCents: upd.unitPriceCents === null ? bandPrice(tariff, upd.quantity) : upd.unitPriceCents,
           priceMode: upd.unitPriceCents === null ? 'tariff' : 'manual' };
       });
+      applySavedCostings(q,lines);
       q.tariff = c.tariff;
       q.lines = lines;
       q.totals = quoteTotals(s, lines);
@@ -1025,6 +1033,26 @@
     exact(c,['materials','trims','sewing','pressing','margin','discounts'],path);
     if (![c.materials,c.trims,c.sewing,c.pressing].every(isMoney) || !isInt0(c.margin) || c.margin>100000 || !Array.isArray(c.discounts) || c.discounts.length!==4 || c.discounts.some(n=>!isInt0(n)||n>10000)) bad(path);
   }
+  function costingPrice(costing,quantity) {
+    const {materials,trims,sewing,pressing,margin,discounts}=costing;
+    const sum=[materials,trims,sewing,pressing].reduce((total,value)=>total+BigInt(value),0n);
+    const tier=quantity>=300?3:quantity>=100?2:quantity>=50?1:0;
+    return Number((sum*BigInt(10000+margin)*BigInt(10000-discounts[tier])+50000000n)/100000000n);
+  }
+  function applySavedCostings(quote,lines) {
+    const costs=quote.lineCostings || (quote.costing && quote.lines.length===1 ? {[quote.lines[0].id]:quote.costing} : null);
+    if(!costs)return;
+    const retained={};
+    for(const line of lines) {
+      const previous=quote.lines.find(item=>item.id===line.id);
+      const costing=costs[line.id];
+      if(!costing||line.priceMode!=='manual'||line.unitPriceCents!==previous?.unitPriceCents)continue;
+      line.unitPriceCents=costingPrice(costing,line.quantity);
+      retained[line.id]=costing;
+    }
+    quote.lineCostings=retained;
+    delete quote.costing;
+  }
   function checkPhaseOne(s) {
     const phase=exact(s.phaseOne,['production','suppliers'],'phaseOne');
     for(const name of ['production','suppliers']) uniqueIds(arr(phase[name],name),name);
@@ -1057,10 +1085,12 @@
       checkCosting(c.costing,'costing');
       const line=q.lines.find(l=>l.id===c.lineId);
       if(!line) fail('NOT_FOUND','lineId','Selecciona una peça.');
-      const b=c.costing, cost=BigInt(b.materials)+BigInt(b.trims)+BigInt(b.sewing)+BigInt(b.pressing);
-      const tier=[25,50,100,300].reduce((index,min,i)=>line.quantity>=min?i:index,0);
-      line.unitPriceCents=Number((cost*BigInt(10000+b.margin)*BigInt(10000-b.discounts[tier])+50000000n)/100000000n);
-      line.priceMode='manual';q.costing=clone(b);q.terms=String(c.terms||'').trim().slice(0,1200);
+      line.unitPriceCents=costingPrice(c.costing,line.quantity);
+      line.priceMode='manual';
+      q.lineCostings ||= {};
+      q.lineCostings[line.id]=clone(c.costing);
+      delete q.costing;
+      q.terms=String(c.terms||'').trim().slice(0,1200);
       q.totals=quoteTotals(s,q.lines);q.revision++;q.reviewedRevision=null;return q;
     },
     CREATE_FINAL_QUOTE(s,c,o) {
@@ -1070,6 +1100,12 @@
       const final=clone(initial);
       final.id=nextId(s,'pre','quotes');final.number=nextNumber(s,'quotes','PRE');final.createdOn=stamp(o).slice(0,10);
       final.lines=final.lines.map((line,i)=>({...line,id:final.id+'-l'+(i+1)}));
+      if(initial.lineCostings) {
+        final.lineCostings=Object.fromEntries(final.lines.flatMap((line,index)=>{
+          const costing=initial.lineCostings[initial.lines[index].id];
+          return costing ? [[line.id,clone(costing)]] : [];
+        }));
+      }
       final.phase='final';final.initialQuoteId=initial.id;final.status='draft';final.revision=1;final.reviewedRevision=null;
       s.quotes.push(final);
       const meeting=s.workflow?.meetings.find(m=>m.quoteIds.includes(initial.id));
@@ -1128,7 +1164,7 @@
       if(c.phase==='initial') q.phase='initial';
       workflow(s);s.quotes.push(q);if(meeting)meeting.quoteIds.push(id);return q;
     },
-    UPDATE_QUOTE_LINES(s,c) {const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');if(q.status!=='draft')fail('INVALID_TRANSITION','id','Només es poden editar esborranys.');if(c.expectedQuoteRevision!==undefined&&c.expectedQuoteRevision!==q.revision)fail('STALE_REVIEW','expectedQuoteRevision','El pressupost ha canviat.');if(c.tariff!==undefined){if(!TARIFF_CODES.includes(c.tariff))fail('VALIDATION_ERROR','tariff','Selecciona A, B o C.');q.tariff=c.tariff;}const lines=manualLines(s,c.lines,q.id,q.lines);for(const l of lines)if(l.priceMode==='tariff')l.unitPriceCents=bandPrice(tariffByCode(s,q.tariff),l.quantity);q.lines=lines;q.totals=quoteTotals(s,lines);q.revision++;q.reviewedRevision=null;return q;},
+    UPDATE_QUOTE_LINES(s,c) {const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');if(q.status!=='draft')fail('INVALID_TRANSITION','id','Només es poden editar esborranys.');if(c.expectedQuoteRevision!==undefined&&c.expectedQuoteRevision!==q.revision)fail('STALE_REVIEW','expectedQuoteRevision','El pressupost ha canviat.');if(c.tariff!==undefined){if(!TARIFF_CODES.includes(c.tariff))fail('VALIDATION_ERROR','tariff','Selecciona A, B o C.');q.tariff=c.tariff;}const lines=manualLines(s,c.lines,q.id,q.lines);for(const l of lines)if(l.priceMode==='tariff')l.unitPriceCents=bandPrice(tariffByCode(s,q.tariff),l.quantity);applySavedCostings(q,lines);q.lines=lines;q.totals=quoteTotals(s,lines);q.revision++;q.reviewedRevision=null;return q;},
     CREATE_PURCHASE(s,c,o) {clientCheck(s,c.clientId);const e={id:nextId(s,'cmp','purchases'),clientId:c.clientId,supplierName:textValue(c.supplierName,'supplierName',120),reference:textValue(c.reference,'reference',120),purchasedOn:dateValue(c.purchasedOn,'purchasedOn'),description:textValue(c.description,'description',500),quantity:c.quantity,unitCostCents:c.unitCostCents,taxRateBps:c.taxRateBps,dueDate:dateValue(c.dueDate,'dueDate',true),attachmentIds:attachmentIds(s,c.attachmentIds),invoiceId:null,paymentStatus:'pending',paidOn:null,paymentReference:null,createdAt:stamp(o)};if(!isQty(e.quantity)||!isMoney(e.unitCostCents)||!isInt0(e.taxRateBps)||e.taxRateBps>10000)fail('VALIDATION_ERROR','quantity','Revisa els imports de la compra.');const w=workflow(s);if(w.purchases.some(p=>p.clientId===e.clientId&&normName(p.supplierName)===normName(e.supplierName)&&normName(p.reference)===normName(e.reference)))fail('DUPLICATE_PURCHASE','reference','Aquest registre de proveïdor ja està registrat.');e.totals=totalsOf([purchaseLine(e)],e.taxRateBps);w.purchases.push(e);return e;},
     CREATE_REBILL_INVOICE(s,c,o) {reviewed(c);revisionCheck(s,c);if(!Array.isArray(c.purchaseIds)||!c.purchaseIds.length||new Set(c.purchaseIds).size!==c.purchaseIds.length)fail('VALIDATION_ERROR','purchaseIds','Selecciona compres úniques.');const ps=c.purchaseIds.map(id=>wfGet(s,'purchases',id));if(ps.some(p=>p.invoiceId!==null))fail('ALREADY_INVOICED','purchaseIds','Una compra ja està refacturada.');if(ps.some(p=>p.clientId!==ps[0].clientId||p.taxRateBps!==ps[0].taxRateBps))fail('CLIENT_MISMATCH','purchaseIds','Les compres han de compartir client i impost.');const day=stamp(o).slice(0,10),lines=ps.map(purchaseLine),i={id:nextId(s,'fac','invoices'),number:nextNumber(s,'invoices','FAC'),clientId:ps[0].clientId,createdOn:day,dueDate:addDays(day,profile(s,ps[0].clientId).paymentTermDays),deliveryNoteIds:[],origin:'purchase',purchaseIds:ps.map(p=>p.id),lines,taxRateBps:ps[0].taxRateBps,totals:totalsOf(lines,ps[0].taxRateBps),reviewedAtRevision:s.revision,paymentStatus:'pending'};ps.forEach(p=>{p.invoiceId=i.id;});s.invoices.push(i);billingTotals(s.invoices);return i;},
     MARK_PURCHASE_PAID(s,c,o) {reviewed(c);const p=wfGet(s,'purchases',c.id);if(p.paymentStatus!=='pending')fail('INVALID_TRANSITION','id','La compra ja té el pagament registrat.');p.paidOn=dateValue(c.paidOn,'paidOn');p.paymentReference=textValue(c.reference,'reference',120);p.paymentStatus='paid_recorded';stamp(o);return p;},
