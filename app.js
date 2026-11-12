@@ -557,6 +557,11 @@
   async function workflowAction(action,id,el) {
     switch(action) {
       case 'phase-scroll':document.getElementById(id)?.scrollIntoView({block:'start'});break;
+      case 'edit-client-segment': {
+        const client=state.clients.find(item=>item.id===id);
+        openDialog('Tipus de client',dialogForm('client-segment',field('segment','Carpeta',select('segment',clientSegmentOptions,client.segment||'')),'Desa el tipus',`data-id="${escape(id)}"`));
+        break;
+      }
       case 'quote-costing':openCosting(id);break;
       case 'quote-final':openDialog('Crea el pressupost definitiu',dialogForm('quote-final',humanReview('El client ha acceptat l’orientació. Revisaré els imports definitius abans d’aprovar.'),'Crea l’esborrany definitiu',`data-id="${escape(id)}"`));break;
       case 'new-production':openProduction();break;
@@ -645,7 +650,12 @@
     if (ids.length>5) throw new InputError('Selecciona com a màxim 5 adjunts.','attachmentFile');
     switch(form.dataset.form) {
       case 'quote-filters':quoteFilter={client:get('filterClient'),status:get('filterStatus'),phase:get('filterPhase')};render();break;
-      case 'delivery-filters':deliveryFilter={client:get('deliveryClient'),status:get('deliveryStatus')};render();break;
+      case 'delivery-filters': {
+        const from=get('deliveryFrom'),to=get('deliveryTo');
+        if(from&&to&&from>to)throw new InputError('La data final ha de ser igual o posterior a la inicial.','deliveryTo');
+        deliveryFilter={client:get('deliveryClient'),status:get('deliveryStatus'),from,to};render();break;
+      }
+      case 'client-segment':await commit({type:'SET_CLIENT_SEGMENT',id:form.dataset.id,segment:get('segment')},form,'Tipus de client desat.');break;
       case 'quote-costing': {
         const costing=Object.fromEntries(['materials','trims','sewing','pressing','margin'].map(key=>[key,cents(get(key),key)]));
         costing.discounts=[25,50,100,300].map(n=>cents(get('discount'+n),'discount'+n));
@@ -834,20 +844,23 @@
       `<tr><td>${escape(row.id.toUpperCase())}<br>${date(row.createdOn)}</td><td>${link('clients',row.clientId,clientName(row.clientId))}<br>${escape(row.workshop)}</td><td>${escape(row.model)} · ${escape(row.description)}</td><td>${row.sizes.map(size=>escape(size.label)+': '+size.quantity).join(' · ')}</td><td>${escape(row.stage)} · ${row.status==='received'?'Rebut':'Pendent'}</td><td>${button('Document','print-production',row.id,true,'print')}${productionActions(row)}</td></tr>`))
       : empty('Cap albarà de producció','Crea un albarà vinculat al client i al taller.');
   }
-  let deliveryFilter={client:'',status:''};
+  let deliveryFilter={client:'',status:'',from:'',to:''};
   const invoicedDelivery=note=>state.invoices.some(invoice=>invoice.deliveryNoteIds.includes(note.id));
   function deliveryFilters() {
     const statuses=[['','Tots'],['workshop','Al taller'],['ready','A punt'],['delivered','Lliurat'],['uninvoiced','Lliurat sense facturar']];
     return `<section class="panel"><div class="panel-body"><form data-form="delivery-filters" class="toolbar">
       ${field('deliveryClient','Client',select('deliveryClient',[['','Tots'],...state.clients.map(c=>[c.id,c.name])],deliveryFilter.client))}
       ${field('deliveryStatus','Estat del lliurament',select('deliveryStatus',statuses,deliveryFilter.status))}
-      <button type="submit" class="button">Filtra</button></form></div></section>`;
+      ${field('deliveryFrom','Des del dia',input('deliveryFrom','date',deliveryFilter.from))}
+      ${field('deliveryTo','Fins al dia',input('deliveryTo','date',deliveryFilter.to))}
+      ${formError}<button type="submit" class="button">Filtra</button></form></div></section>`;
   }
   function deliverySections() {
-    const {client,status}=deliveryFilter;
-    const production=phaseData().production.filter(row=>!client||row.clientId===client);
-    const notes=state.deliveryNotes.filter(note=>(!client||note.clientId===client)&&(!status||(status==='uninvoiced'?note.status==='delivered'&&!invoicedDelivery(note):note.status===status)));
-    const suppliers=phaseData().suppliers.filter(doc=>!client||doc.lines.some(line=>line.clientId===client));
+    const {client,status,from,to}=deliveryFilter;
+    const dateMatches=record=>(!from||record.createdOn>=from)&&(!to||record.createdOn<=to);
+    const production=phaseData().production.filter(row=>(!client||row.clientId===client)&&dateMatches(row));
+    const notes=state.deliveryNotes.filter(note=>dateMatches(note)&&(!client||note.clientId===client)&&(!status||(status==='uninvoiced'?note.status==='delivered'&&!invoicedDelivery(note):note.status===status)));
+    const suppliers=phaseData().suppliers.filter(doc=>dateMatches(doc)&&(!client||doc.lines.some(line=>line.clientId===client)));
     return heading('Albarans','Producció, lliuraments i costos dels proveïdors.')+
       '<nav class="actions section-title" aria-label="Tipus d’albarà">'+[['produccio','Producció'],['lliurament','Lliurament'],['proveidor','Proveïdor']].map(([id,label])=>`<button class="button secondary" data-action="phase-scroll" data-id="${id}">${label}</button>`).join('')+'</nav>'+deliveryFilters()+
       `<section id="produccio" class="panel">${panelHead('Producció','Tall, confecció i planxa',button('Nou albarà de producció','new-production','',false,'plus'))}${productionTable(production)}</section>
@@ -1019,6 +1032,16 @@
     return heading('Biblioteca de teixits','Textures, composicions i possibilitats per a cada peça.') + `<form data-form="filter-fabrics" class="toolbar" novalidate>${field('text','Nom del teixit',input('text','search','','placeholder="Cerca un teixit…"'))}${field('composition','Composició',input('composition','text','','placeholder="Ex.: cotó"'))}${field('maxPrice','Preu màxim (€)',input('maxPrice','text','','inputmode="decimal" placeholder="Sense límit"'))}<button type="submit" class="button secondary">${icon('search')} Filtra</button>${formError}</form><div id="fabric-results" aria-live="polite">${fabricCards(fabrics)}</div>`;
   }
 
+  const clientSegments=[['merchandising','Merchandising i promocional'],['collection','Col·leccions']];
+  const clientSegmentOptions=[['','Sense classificar'],...clientSegments];
+  function clientFolders(clients) {
+    if(!clients.length)return clientCards(clients);
+    return clientSegmentOptions.map(([segment,label])=>{
+      const records=clients.filter(client=>(client.segment||'')===segment);
+      if(!segment&&!records.length)return '';
+      return `<section class="panel">${panelHead(label,'',icon('folder'))}<div class="panel-body">${records.length?clientCards(records):'<p class="muted">Cap client en aquesta carpeta.</p>'}</div></section>`;
+    }).join('');
+  }
   function clientCards(clients) {
     return clients.length ? `<div class="client-grid">${clients.map(c => `<a class="client-card" href="${path('clients',c.id)}"><div class="client-monogram" aria-hidden="true">${escape(c.name.split(/\s+/).slice(0,2).map(word => word[0]).join(''))}</div><h2>${escape(c.name)}</h2><p>${escape(c.email || 'Sense correu fictici')}</p><span class="card-link">Obre la fitxa <span aria-hidden="true">↗</span></span></a>`).join('')}</div>` : `<section class="panel">${empty('No hem trobat cap client','Canvia la cerca o restableix-la per veure tots els clients ficticis.',button('Restableix la cerca','reset-clients','',true))}</section>`;
   }
@@ -1027,9 +1050,9 @@
       const result = store.query({type:'CLIENT_DETAIL',id:route.id});
       if (!result.ok) return notFound();
       const d = result.data;
-      return `<a class="back-link" href="#/clients">${icon('back')} Torna als clients</a>` + heading(d.client.name,d.client.email || 'Sense correu fictici',button('Esborrany IA','ai-followup',d.client.id,true,'query') + button('Nou seguiment','new-task',d.client.id,true,'plus') + button('Nou pressupost','new-quote',d.client.id,false,'plus'),'CLIENT SINTÈTIC') + `<section class="panel">${panelHead('Pressupostos','Documents vinculats exclusivament a aquest client')}${quoteTable(d.quotes)}</section><section class="panel">${panelHead('Albarans')}${deliveryTable(d.deliveryNotes)}</section><section class="panel">${panelHead('Factures il·lustratives')}${invoiceTable(d.invoices)}</section><section class="panel">${panelHead('Notes i seguiment')}${taskTable(d.tasks)}</section>`;
+      return `<a class="back-link" href="#/clients">${icon('back')} Torna als clients</a>` + heading(d.client.name,d.client.email || 'Sense correu fictici',button('Esborrany IA','ai-followup',d.client.id,true,'query') + button('Nou seguiment','new-task',d.client.id,true,'plus') + button('Nou pressupost','new-quote',d.client.id,false,'plus')+button('Canvia el tipus','edit-client-segment',d.client.id,true),'CLIENT SINTÈTIC') + `<section class="panel">${panelHead('Pressupostos','Documents vinculats exclusivament a aquest client')}${quoteTable(d.quotes)}</section><section class="panel">${panelHead('Albarans')}${deliveryTable(d.deliveryNotes)}</section><section class="panel">${panelHead('Factures il·lustratives')}${invoiceTable(d.invoices)}</section><section class="panel">${panelHead('Notes i seguiment')}${taskTable(d.tasks)}</section>`;
     }
-    return heading('Clients','El fil de cada relació, en una sola fitxa.',button('Nou client fictici','new-client','',false,'plus')) + `<form data-form="filter-clients" class="toolbar" novalidate>${field('clientSearch','Cerca per nom o correu fictici',input('clientSearch','search','','placeholder="Cerca un client…"'))}<button type="submit" class="button secondary">${icon('search')} Cerca</button>${formError}</form><div id="client-results" aria-live="polite">${clientCards(requireQuery({type:'CLIENTS'}))}</div>`;
+    return heading('Clients','El fil de cada relació, en una sola fitxa.',button('Nou client fictici','new-client','',false,'plus')) + `<form data-form="filter-clients" class="toolbar" novalidate>${field('clientSearch','Cerca per nom o correu fictici',input('clientSearch','search','','placeholder="Cerca un client…"'))}<button type="submit" class="button secondary">${icon('search')} Cerca</button>${formError}</form><div id="client-results" aria-live="polite">${clientFolders(requireQuery({type:'CLIENTS'}))}</div>`;
   }
 
   function sourceLinks(sources) {return sources.map(source => `<a href="${escape(safeHash(source.hash))}">${icon('arrow')}${escape(source.label)}</a>`).join('');}
@@ -1659,7 +1682,7 @@
           if (!result.ok) {showFormError(form,result.error);break;}
           closeDialog();state = store.getState();if (session.mode !== "browser") readLegacy();render(true);notify('Dades importades al servidor. La còpia original del navegador es conserva.');break;
         }
-        case 'new-client': await commit({type:'CREATE_CLIENT',name:get('name'),email:get('email').trim() || null},form,'Client fictici creat.','clients');break;
+        case 'new-client': await commit({type:'CREATE_CLIENT',name:get('name'),email:get('email').trim() || null,segment:get('segment')},form,'Client fictici creat.','clients');break;
         case 'new-task': await commit({type:'CREATE_TASK',clientId:get('clientId'),text:get('text'),dueDate:get('dueDate')},form,'Seguiment desat. No s’ha enviat cap missatge.',route.module === 'calendari' ? undefined : 'seguiment');break;
         case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff'),meetingId:form.dataset.meetingId || null,phase:'initial'},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
         case 'edit-quote': {
@@ -1697,7 +1720,7 @@
         }
         case 'filter-clients': {
           const result = store.query({type:'CLIENTS',text:get('clientSearch')});
-          if (result.ok) $('#client-results').innerHTML = clientCards(result.data);else showFormError(form,result.error);break;
+          if (result.ok) $('#client-results').innerHTML = clientFolders(result.data);else showFormError(form,result.error);break;
         }
         case 'answer': {
           const text = get('question');
@@ -1791,7 +1814,7 @@
         if (!result.ok) {notify(result.error.message,true);break;}
         closeDialog();lastAnswer = null;$('#print-document').innerHTML = '';navigate('inici');render(true);notify('Demo restaurada amb les dades fictícies inicials.');break;
       }
-      case 'new-client':openDialog('Nou client fictici',`<p class="dialog-intro">Crea una marca sintètica per explorar el taller. Utilitza únicament dades inventades.</p><form data-form="new-client" novalidate>${formError}${field('name','Nom de la marca fictícia',input('name','text','','required autofocus placeholder="Ex.: Estudi de Mostra"'))}${field('email','Correu fictici (opcional)',input('email','email','','placeholder="mostra@example.com"'),'Només s’admet el domini example.com. No introdueixis dades reals.')}${formActions('Crea el client fictici')}${disclaimer}</form>`);break;
+      case 'new-client':openDialog('Nou client fictici',`<p class="dialog-intro">Crea una marca sintètica per explorar el taller. Utilitza únicament dades inventades.</p><form data-form="new-client" novalidate>${formError}${field('name','Nom de la marca fictícia',input('name','text','','required autofocus placeholder="Ex.: Estudi de Mostra"'))}${field('email','Correu fictici (opcional)',input('email','email','','placeholder="mostra@example.com"'),'Només s’admet el domini example.com. No introdueixis dades reals.')}${field('segment','Carpeta',select('segment',clientSegmentOptions))}${formActions('Crea el client fictici')}${disclaimer}</form>`);break;
       case 'new-task':openDialog('Un nou fil de seguiment',`<p class="dialog-intro">Desa una nota i una data. Aquesta acció no envia cap missatge.</p><form data-form="new-task" novalidate>${formError}${field('clientId','Client fictici',clientOptions(id || ''))}${field('text','Nota de seguiment',`<textarea id="text" name="text" aria-describedby="text-error" required autofocus placeholder="Què cal recordar?"></textarea>`)}${field('dueDate','Data prevista',input('dueDate','date',route.module === 'calendari' && route.id ? route.id : serverToday(),'required'))}${formActions('Desa el seguiment')}${disclaimer}</form>`);break;
       case 'complete-task':await commit({type:'COMPLETE_TASK',id},null,'Seguiment completat i conservat a l’historial.');break;
       case 'new-quote':newQuote(id);break;

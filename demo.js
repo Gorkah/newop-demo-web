@@ -311,7 +311,8 @@
     const names = new Set();
     s.clients.forEach((c, i) => {
       const p = 'clients[' + i + ']';
-      exact(c, ['id', 'name', 'email'], p);
+      optionalExact(c, ['id', 'name', 'email'], ['segment'], p);
+      if(c.segment!==undefined&&!['merchandising','collection'].includes(c.segment)) bad(p+'.segment');
       if (!isStr(c.name)) bad(p + '.name');
       const n = normName(c.name);
       if (names.has(n)) bad(p + '.name', 'Nom de client duplicat.');
@@ -743,6 +744,10 @@
       const key = normName(name);
       if (s.clients.some((x) => normName(x.name) === key)) fail('DUPLICATE_CLIENT', 'name', 'Ja existeix un client amb aquest nom.');
       const client = { id: nextId(s, 'cli', 'clients'), name, email };
+      if(c.segment) {
+        if(!['merchandising','collection'].includes(c.segment)) fail('VALIDATION_ERROR','segment','Tria un tipus de client vàlid.');
+        client.segment=c.segment;
+      }
       s.clients.push(client);
       return client;
     },
@@ -1084,6 +1089,12 @@
   }
 
   Object.assign(HANDLERS,{
+    SET_CLIENT_SEGMENT(s,c) {
+      const client=getOrFail(s,'clients',c.id,'id','No s’ha trobat el client.');
+      if(!['','merchandising','collection'].includes(c.segment)) fail('VALIDATION_ERROR','segment','Tria un tipus de client vàlid.');
+      if(c.segment)client.segment=c.segment;else delete client.segment;
+      return client;
+    },
     SAVE_QUOTE_COSTING(s,c) {
       const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');
       if(q.status!=='draft') fail('INVALID_TRANSITION','id','Edita l’escandall mentre el pressupost sigui un esborrany.');
@@ -1186,7 +1197,7 @@
     CREATE_REBILL_INVOICE(s,c,o) {reviewed(c);revisionCheck(s,c);if(!Array.isArray(c.purchaseIds)||!c.purchaseIds.length||new Set(c.purchaseIds).size!==c.purchaseIds.length)fail('VALIDATION_ERROR','purchaseIds','Selecciona compres úniques.');const ps=c.purchaseIds.map(id=>wfGet(s,'purchases',id));if(ps.some(p=>p.invoiceId!==null))fail('ALREADY_INVOICED','purchaseIds','Una compra ja està refacturada.');if(ps.some(p=>p.clientId!==ps[0].clientId||p.taxRateBps!==ps[0].taxRateBps))fail('CLIENT_MISMATCH','purchaseIds','Les compres han de compartir client i impost.');const day=stamp(o).slice(0,10),lines=ps.map(purchaseLine),i={id:nextId(s,'fac','invoices'),number:nextNumber(s,'invoices','FAC'),clientId:ps[0].clientId,createdOn:day,dueDate:addDays(day,profile(s,ps[0].clientId).paymentTermDays),deliveryNoteIds:[],origin:'purchase',purchaseIds:ps.map(p=>p.id),lines,taxRateBps:ps[0].taxRateBps,totals:totalsOf(lines,ps[0].taxRateBps),reviewedAtRevision:s.revision,paymentStatus:'pending'};ps.forEach(p=>{p.invoiceId=i.id;});s.invoices.push(i);billingTotals(s.invoices);return i;},
     MARK_PURCHASE_PAID(s,c,o) {reviewed(c);const p=wfGet(s,'purchases',c.id);if(p.paymentStatus!=='pending')fail('INVALID_TRANSITION','id','La compra ja té el pagament registrat.');p.paidOn=dateValue(c.paidOn,'paidOn');p.paymentReference=textValue(c.reference,'reference',120);p.paymentStatus='paid_recorded';stamp(o);return p;},
     SET_CLIENT_BILLING_PROFILE(s,c,o) {clientCheck(s,c.clientId);if(typeof c.isNewClient!=='boolean'||!isInt0(c.paymentTermDays)||c.paymentTermDays>365||!isInt0(c.depositBps)||c.depositBps>10000)fail('VALIDATION_ERROR','depositBps','Revisa les condicions del client.');const w=workflow(s),p={clientId:c.clientId,isNewClient:c.isNewClient,paymentTermDays:c.paymentTermDays,depositBps:c.depositBps,updatedAt:stamp(o)},i=w.billingProfiles.findIndex(x=>x.clientId===c.clientId);if(i<0)w.billingProfiles.push(p);else w.billingProfiles[i]=p;return p;},
-    CREATE_PROFORMA(s,c,o) {reviewed(c);revisionCheck(s,c);const q=getOrFail(s,'quotes',c.quoteId,'quoteId','Pressupost no disponible.');if(q.status==='draft')fail('INVALID_TRANSITION','quoteId','Aprova el pressupost abans de preparar la proforma.');const w=workflow(s);if(w.proformas.some(p=>p.quoteId===q.id))fail('DUPLICATE_REFERENCE','quoteId','Aquest pressupost ja té proforma.');const bp=profile(s,q.clientId),amount=Number((BigInt(q.totals.totalCents)*BigInt(bp.depositBps)+5000n)/10000n);if(!isQty(amount))fail('VALIDATION_ERROR','depositBps','L’anticipo ha de ser positiu.');const at=stamp(o),p={id:nextId(s,'pro','proformas'),number:'PRO-2026-'+pad4(w.proformas.length+1),quoteId:q.id,clientId:q.clientId,amountCents:amount,depositBps:bp.depositBps,quoteTotalCents:q.totals.totalCents,createdOn:at.slice(0,10),dueDate:addDays(at.slice(0,10),bp.paymentTermDays),createdAt:at};w.proformas.push(p);return p;},
+    CREATE_PROFORMA(s,c,o) {reviewed(c);revisionCheck(s,c);const q=getOrFail(s,'quotes',c.quoteId,'quoteId','Pressupost no disponible.');if(q.status==='draft'||q.phase==='initial')fail('INVALID_TRANSITION','quoteId','Cal un pressupost definitiu aprovat per preparar la proforma.');const w=workflow(s);if(w.proformas.some(p=>p.quoteId===q.id))fail('DUPLICATE_REFERENCE','quoteId','Aquest pressupost ja té proforma.');const bp=profile(s,q.clientId),amount=Number((BigInt(q.totals.totalCents)*BigInt(bp.depositBps)+5000n)/10000n);if(!isQty(amount))fail('VALIDATION_ERROR','depositBps','L’anticipo ha de ser positiu.');const at=stamp(o),p={id:nextId(s,'pro','proformas'),number:'PRO-2026-'+pad4(w.proformas.length+1),quoteId:q.id,clientId:q.clientId,amountCents:amount,depositBps:bp.depositBps,quoteTotalCents:q.totals.totalCents,createdOn:at.slice(0,10),dueDate:addDays(at.slice(0,10),bp.paymentTermDays),createdAt:at};w.proformas.push(p);return p;},
     RECORD_RECEIPT(s,c,o) {reviewed(c);if(!isQty(c.amountCents))fail('VALIDATION_ERROR','amountCents','Indica un import positiu en cèntims.');const b=balance(s,c.targetType,c.targetId);if(c.amountCents>b.outstandingCents)fail('AMOUNT_EXCEEDED','amountCents','L’import supera el saldo pendent.');const target=c.targetType==='invoice'?s.invoices.find(i=>i.id===c.targetId):wfGet(s,'proformas',c.targetId),w=workflow(s),reference=textValue(c.reference,'reference',120);if(w.receipts.some(r=>r.clientId===target.clientId&&normName(r.reference)===normName(reference)))fail('DUPLICATE_REFERENCE','reference','Aquest rebut ja està registrat.');const r={id:nextId(s,'rec','receipts'),targetType:c.targetType,targetId:c.targetId,clientId:target.clientId,amountCents:c.amountCents,receivedOn:dateValue(c.receivedOn,'receivedOn'),reference,createdAt:stamp(o)};w.receipts.push(r);if(c.targetType==='invoice'&&balance(s,'invoice',target.id).outstandingCents===0)target.paymentStatus='paid_simulated';return r;},
     APPLY_PROFORMA_CREDIT(s,c,o) {reviewed(c);const pro=wfGet(s,'proformas',c.proformaId),inv=getOrFail(s,'invoices',c.invoiceId,'invoiceId','Factura no disponible.');if(pro.clientId!==inv.clientId||inv.origin==='purchase'||inv.deliveryNoteIds.some(id=>s.deliveryNotes.find(d=>d.id===id)?.quoteId!==pro.quoteId))fail('CLIENT_MISMATCH','invoiceId','La factura ha de provenir del mateix client i pressupost.');if(!isQty(c.amountCents)||c.amountCents>balance(s,'proforma',pro.id).availableCreditCents||c.amountCents>balance(s,'invoice',inv.id).outstandingCents)fail('AMOUNT_EXCEEDED','amountCents','L’anticipo disponible o el saldo és insuficient.');const e={id:nextId(s,'cre','creditAllocations'),proformaId:pro.id,invoiceId:inv.id,clientId:inv.clientId,amountCents:c.amountCents,createdAt:stamp(o)};workflow(s).creditAllocations.push(e);if(balance(s,'invoice',inv.id).outstandingCents===0)inv.paymentStatus='paid_simulated';return e;},
     CREATE_WORKSHOP_ENTRY(s,c,o) {clientCheck(s,c.clientId);const d=c.deliveryNoteId?getOrFail(s,'deliveryNotes',c.deliveryNoteId,'deliveryNoteId','Albarà no disponible.'):null;if(d&&d.clientId!==c.clientId)fail('CLIENT_MISMATCH','deliveryNoteId','Albarà d’un altre client.');const e={id:nextId(s,'tal','workshopEntries'),clientId:c.clientId,deliveryNoteId:d?.id||null,workshopName:textValue(c.workshopName,'workshopName',120),text:textValue(c.text,'text'),dueDate:dateValue(c.dueDate,'dueDate'),status:'pending',createdAt:stamp(o),deliveredAt:null,deliveredOn:null,attachmentIds:attachmentIds(s,c.attachmentIds)};workflow(s).workshopEntries.push(e);return e;},
