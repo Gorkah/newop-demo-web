@@ -1060,6 +1060,11 @@
       if(!s.clients.some(c=>c.id===row.clientId) || !stages.includes(row.stage) || !isDate(row.createdOn) || !['pending','received'].includes(row.status)) bad('production');
       if(!Array.isArray(row.sizes)||!row.sizes.length||row.sizes.some(size=>!isStr(size.label)||!isQty(size.quantity))||new Set(row.sizes.map(size=>normName(size.label))).size!==row.sizes.length) bad('production.sizes');
       if(![row.workshop,row.model,row.description].every(isStr)) bad('production');
+      if(row.previousId!==undefined) {
+        const previous=phase.production.find(p=>p.id===row.previousId);
+        if(!previous||previous.clientId!==row.clientId||previous.status!=='received'||stages.indexOf(row.stage)!==stages.indexOf(previous.stage)+1) bad('production.previousId');
+        if(phase.production.filter(p=>p.previousId===row.previousId).length>1||s.deliveryNotes.some(d=>d.productionId===row.previousId)) bad('production.previousId');
+      }
     }
     for(const note of s.deliveryNotes.filter(d=>d.productionId)) {
       const row=phase.production.find(p=>p.id===note.productionId&&p.clientId===note.clientId&&p.status==='received');
@@ -1116,8 +1121,18 @@
       clientCheck(s,c.clientId);
       const rows=phaseOne(s).production, existing=rows.find(row=>row.id===c.id);
       if(c.id&&(!existing||existing.clientId!==c.clientId||existing.status==='received')) fail('INVALID_TRANSITION','id','Aquest albarà de taller ja està tancat.');
-      const row={id:existing?.id||'tpr-'+(++s.sequence),clientId:c.clientId,stage:c.stage,createdOn:existing?.createdOn||stamp(o).slice(0,10),status:c.received?'received':'pending',sizes:c.sizes,
-        workshop:textValue(c.workshop,'workshop',120),model:textValue(c.model,'model',100),description:textValue(c.description,'description',400),fabric:String(c.fabric||'').trim().slice(0,120),supplier:String(c.supplier||'').trim().slice(0,120),code:String(c.code||'').trim().slice(0,80),color:String(c.color||'').trim().slice(0,80),notes:String(c.notes||'').trim().slice(0,1200)};
+      if(!stages.includes(c.stage)) fail('VALIDATION_ERROR','stage','Tria tall, confecció o planxa.');
+      if(!Array.isArray(c.sizes)||!c.sizes.length||c.sizes.length>30||c.sizes.some(size=>!isObj(size)||!isStr(size.label)||size.label.trim().length>15||!isQty(size.quantity))||new Set(c.sizes.map(size=>normName(size.label))).size!==c.sizes.length) fail('VALIDATION_ERROR','sizes','Indica talles úniques amb quantitats enteres positives.');
+      const previousId=existing?existing.previousId:(c.previousId||undefined);
+      if(existing?.previousId&&c.stage!==existing.stage) fail('INVALID_TRANSITION','stage','Aquest albarà continua una operació anterior; no se’n pot canviar l’operació.');
+      if(!existing&&previousId) {
+        const previous=rows.find(row=>row.id===previousId&&row.clientId===c.clientId&&row.status==='received');
+        if(!previous||stages[stages.indexOf(previous.stage)+1]!==c.stage) fail('INVALID_TRANSITION','previousId','El pas següent ha de continuar un albarà rebut del mateix client.');
+        if(rows.some(row=>row.previousId===previousId)) fail('DUPLICATE_REFERENCE','previousId','Aquest albarà ja té el pas següent creat.');
+        if(s.deliveryNotes.some(note=>note.productionId===previousId)) fail('INVALID_TRANSITION','previousId','Aquestes peces ja tenen albarà de lliurament.');
+      }
+      const row={id:existing?.id||'tpr-'+(++s.sequence),clientId:c.clientId,stage:c.stage,createdOn:existing?.createdOn||stamp(o).slice(0,10),status:c.received?'received':'pending',sizes:c.sizes.map(size=>({label:size.label.trim(),quantity:size.quantity})),
+        workshop:textValue(c.workshop,'workshop',120),model:textValue(c.model,'model',20),description:textValue(c.description,'description',400),fabric:String(c.fabric||'').trim().slice(0,120),supplier:String(c.supplier||'').trim().slice(0,120),code:String(c.code||'').trim().slice(0,80),color:String(c.color||'').trim().slice(0,80),notes:String(c.notes||'').trim().slice(0,1200),...(previousId?{previousId}:{})};
       if(existing) rows[rows.indexOf(existing)]=row;else rows.push(row);
       return row;
     },
@@ -1130,7 +1145,9 @@
       if(c.productionId) {
         const row=s.phaseOne?.production.find(row=>row.id===c.productionId&&row.clientId===c.clientId&&row.status==='received');
         const used=s.deliveryNotes.filter(note=>note.productionId===c.productionId).flatMap(note=>note.lines).reduce((sum,l)=>sum+l.quantity,0);
-        if(!row||used+line.quantity>row.sizes.reduce((sum,size)=>sum+size.quantity,0)) fail('QUANTITY_EXCEEDED','quantity','La quantitat supera les peces rebudes que queden per lliurar.');
+        if(!row) fail('NOT_FOUND','productionId','Cal un albarà de producció rebut del mateix client.');
+        if(s.phaseOne.production.some(next=>next.previousId===row.id)) fail('INVALID_TRANSITION','productionId','Aquestes peces ja continuen al pas següent; prepara el lliurament des de l’últim albarà de producció.');
+        if(used+line.quantity>row.sizes.reduce((sum,size)=>sum+size.quantity,0)) fail('QUANTITY_EXCEEDED','quantity','La quantitat supera les peces rebudes que queden per lliurar.');
       }
       const document={id,number:nextNumber(s,'deliveryNotes','ALB'),clientId:c.clientId,quoteId:null,createdOn:stamp(o).slice(0,10),status:'ready',lines,taxRateBps,totals:quoteTotals(s,lines),...(c.productionId?{productionId:c.productionId}:{})};
       s.deliveryNotes.push(document);return document;

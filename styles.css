@@ -104,4 +104,5 @@ dialog.document-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;display:fl
 #produccio,#lliurament,#proveidor{scroll-margin:20px}
 @media(max-width:780px){.folder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.folder-card{min-height:105px;padding:15px}}
 @media(max-width:360px){.folder-grid{grid-template-columns:1fr}}
+.nav-link[data-module=clients]:not([aria-current]) .icon{color:#c4651a}.nav-link[data-module=facturacio]:not([aria-current]) .icon{color:#2f6fc0}.nav-link[data-module=pressupostos]:not([aria-current]) .icon{color:#2f8a5a}.nav-link[data-module=albarans]:not([aria-current]) .icon{color:#c0457a}
 .calendar-grid .calendar-event{list-style:none;margin-left:-16px;padding:8px;border-radius:7px;border-left:3px solid var(--folder);background:var(--folder-bg);color:var(--folder)}

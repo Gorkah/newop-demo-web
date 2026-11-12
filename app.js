@@ -315,7 +315,7 @@
     return workflow().attachments.length ? `<fieldset class="source-picker"><legend>Fotos d’aquest navegador (màxim 5 per registre)</legend>${workflow().attachments.map(a => `<label class="check-field compact"><input type="checkbox" name="attachmentIds" value="${escape(a.id)}"${selected.includes(a.id) ? ' checked' : ''}><span>${escape(a.filename)} · ${new Intl.NumberFormat('ca-ES').format(a.sizeBytes)} B</span></label>`).join('')}</fieldset>` : '<p class="small muted">Encara no has pujat arxius privats.</p>';
   }
   function attachmentPicker(withSample=false, supplier=false) {
-    return `<details class="attachment-picker"><summary>${supplier?'Adjunta una foto o PDF':'Adjunta una foto'}</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Foto',input('attachmentFile','file','',supplier?'accept="image/jpeg,image/png,image/webp,application/pdf"':'accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Adjunta la foto','upload-attachment','',true)}${withSample ? button('Usa una foto fictícia','sample-meeting-photo','',true) : ''}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
+    return `<details class="attachment-picker"><summary>${supplier?'Adjunta una foto o PDF':'Adjunta una foto'}</summary><p class="small muted">${supplier?'JPEG, PNG, WebP o PDF de fins a 1 MiB. L’arxiu no es llegeix automàticament: revisa els conceptes i el client de cada línia abans de desar.':'JPEG, PNG o WebP de fins a 1 MiB. La foto no es llegeix automàticament: escriu i revisa el text abans de desar.'}</p>${field('attachmentFile',supplier?'Foto o PDF':'Foto',input('attachmentFile','file','',supplier?'accept="image/jpeg,image/png,image/webp,application/pdf"':'accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Adjunta la foto','upload-attachment','',true)}${withSample ? button('Usa una foto fictícia','sample-meeting-photo','',true) : ''}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
   }
   function humanReview(label='He revisat el contingut, les dates i els imports. Aquesta acció només registra dades de demostració.') {
     return `<label class="check-field"><input type="checkbox" name="reviewed" id="workflow-reviewed" aria-describedby="workflow-reviewed-error"><span>${escape(label)}<span class="field-error" id="workflow-reviewed-error"></span></span></label>`;
@@ -645,6 +645,7 @@
     if (ids.length>5) throw new InputError('Selecciona com a màxim 5 adjunts.','attachmentFile');
     switch(form.dataset.form) {
       case 'quote-filters':quoteFilter={client:get('filterClient'),status:get('filterStatus'),phase:get('filterPhase')};render();break;
+      case 'delivery-filters':deliveryFilter={client:get('deliveryClient'),status:get('deliveryStatus')};render();break;
       case 'quote-costing': {
         const costing=Object.fromEntries(['materials','trims','sewing','pressing','margin'].map(key=>[key,cents(get(key),key)]));
         costing.discounts=[25,50,100,300].map(n=>cents(get('discount'+n),'discount'+n));
@@ -658,12 +659,14 @@
           return {label:match[1].trim(),quantity:Number(match[2])};
         });
         const fields=Object.fromEntries(['clientId','stage','workshop','model','description','fabric','supplier','code','color','notes'].map(key=>[key,get(key)]));
-        await commit({type:'SAVE_PRODUCTION',...fields,id:form.dataset.id || undefined,sizes,received:data.has('received')},form,'Albarà de producció desat.');break;
+        await commit({type:'SAVE_PRODUCTION',...fields,id:form.dataset.id || undefined,previousId:form.dataset.previousId || undefined,sizes,received:data.has('received')},form,'Albarà de producció desat.');break;
       }
       case 'direct-delivery':checkedHuman(data);await commit({type:'CREATE_DIRECT_DELIVERY',clientId:get('clientId'),model:get('model'),description:get('description'),quantity:Number(get('quantity')),unitPriceCents:cents(get('price'),'price'),productionId:form.dataset.productionId,reviewed:true},form,'Albarà de lliurament creat.','albarans');break;
       case 'supplier-document': {
         checkedHuman(data);
         if(!ids.length)throw new InputError('Adjunta la foto o el PDF del proveïdor.','attachmentFile');
+        const unresolved=$$('[name="allocation"]',form).find(control=>control.value==='__unknown');
+        if(unresolved){unresolved.dataset.errorField='allocation-unresolved';throw new InputError('Assigna un client o «Casa» als conceptes amb un client anotat desconegut.','allocation-unresolved');}
         const lines=$$('.supplier-row',form).map(row=>({description:$('[name="concept"]',row).value,clientId:$('[name="allocation"]',row).value,quantity:Number($('[name="units"]',row).value),unitCostCents:cents($('[name="price"]',row).value,'price')}));
         await commit({type:'SAVE_SUPPLIER_DOCUMENT',supplierName:get('supplierName'),reference:get('reference'),createdOn:get('createdOn'),attachmentIds:ids,lines,reviewed:true},form,'Albarà desat. Els conceptes assignats són a la fitxa dels clients.');break;
       }
@@ -717,6 +720,10 @@
       const total=purchases.reduce((sum,p)=>sum+BigInt(p.totals.totalCents),0n);
       $('#rebill-total',form).textContent=`${purchases.length} compres · Total il·lustratiu: ${money(total)}`;
     }
+    if(form.dataset.form==='production-note' && event.target.name==='fabric') {
+      const fabric=state.fabrics.find(f=>f.name.toLowerCase()===event.target.value.trim().toLowerCase());
+      if(fabric && !form.elements.supplier.value.trim()) form.elements.supplier.value=fabric.supplierName;
+    }
     if(form.dataset.form==='workshop' && event.target.name==='clientId') form.elements.deliveryNoteId.innerHTML='<option value="">Sense albarà</option>'+state.deliveryNotes.filter(d=>d.clientId===event.target.value).map(d=>`<option value="${escape(d.id)}">${escape(d.number)}</option>`).join('');
   });
   function dataPurchaseIds(form) {return $$('[name="purchaseIds"]:checked',form).map(c=>c.value);}
@@ -739,7 +746,7 @@
       const [tone,label]=deadlineTone(t.dueDate,today);
       return `<div class="task-row"><div class="task-row-content">${link('seguiment',t.id,t.text)}<small>${escape(clientName(t.clientId))} · ${date(t.dueDate)}</small></div><span class="phase-chip ${tone}">${label}</span></div>`;
     }).join('');
-    return heading('El teu espai de treball',date(today),'<a class="button secondary" href="#/calendari">'+icon('calendar')+' Obre el calendari</a>')+
+    return heading('El teu espai de treball',date(today),button('Reunió amb foto','new-meeting','',false,'task')+button('Nou pressupost','manual-quote','',true,'plus')+'<a class="button secondary" href="#/calendari">'+icon('calendar')+' Obre el calendari</a>')+
       `<nav class="folder-grid" aria-label="Carpetes de treball">${moduleFolders.map(([slug,label])=>`<a class="folder-card folder-${slug}" href="${path(slug)}">${icon('folder')}<strong>${label}</strong>${icon('arrow')}</a>`).join('')}</nav>
       <div class="grid-2"><section class="panel">${panelHead('Tasques a fer avui','Avui i pendents endarrerides',button('Nova tasca','new-task','',true,'plus'))}<div class="panel-body">${priorities.length?list(priorities):empty('Tot al dia','Les tasques amb data d’avui apareixeran aquí.')}</div></section>
       <section class="panel">${panelHead('Pròximes tasques','Del calendari de treball','<a href="#/calendari">Veure calendari</a>')}<div class="panel-body">${upcoming.length?list(upcoming):empty('Cap tasca prevista','Pots programar-ne una al calendari.')}</div></section></div>`;
@@ -764,6 +771,20 @@
     return `<section class="panel">${panelHead('Pressupost '+quotePhase(q).toLowerCase(),'',
       (q.status==='draft'?button('Escandall i condicions','quote-costing',q.id,true):'')+conversion)}
       ${refs||q.terms ? `<div class="panel-body">${refs}${q.terms?`<p class="notes">${escape(q.terms)}</p>`:''}</div>` : ''}</section>`;
+  }
+  function costingTiers(b) {
+    const base=(BigInt(b.materials)+BigInt(b.trims)+BigInt(b.sewing)+BigInt(b.pressing))*BigInt(10000+b.margin);
+    return [25,50,100,300].map((quantity,i)=>({quantity,unitCents:(base*BigInt(10000-b.discounts[i])+50000000n)/100000000n}));
+  }
+  function quoteVolumePaper(quote) {
+    const pieces=quote.lines.flatMap(line=>{
+      const costing=quote.lineCostings?.[line.id] || (quote.lines.length===1 ? quote.costing : null);
+      return costing ? [[line,costing]] : [];
+    });
+    if(!pieces.length)return '';
+    return `<section class="paper-notes"><h4>Preus orientatius per volum</h4>${table(['Peça','Unitats','Preu unitari','Import'],pieces.flatMap(([line,costing])=>costingTiers(costing).map(tier=>
+      `<tr><td>${escape(line.label)}</td><td class="mono">${tier.quantity}</td><td class="mono">${money(tier.unitCents)}</td><td class="mono">${money(tier.unitCents*BigInt(tier.quantity))}</td></tr>`)))}
+      <p class="small">Preus aproximats calculats amb l’escandall desat.</p></section>`;
   }
   function openCosting(id) {
     const q=state.quotes.find(q=>q.id===id);
@@ -801,34 +822,62 @@
     });
     form.addEventListener('input',preview);preview();
   }
+  function productionActions(row) {
+    if(row.status==='pending') return button('Edita / rep','edit-production',row.id,true);
+    const next=phaseData().production.find(item=>item.previousId===row.id);
+    if(next) return `<span class="small muted">Continua a ${escape(next.stage)} · ${escape(next.id.toUpperCase())}</span>`;
+    const delivered=state.deliveryNotes.some(note=>note.productionId===row.id);
+    return (row.stage!=='Planxa'&&!delivered?button('Pas següent','next-production',row.id,true):'')+button('Prepara el lliurament','direct-delivery',row.id,true);
+  }
   function productionTable(rows) {
     return rows.length?table(['Albarà','Client / taller','Model','Talles','Estat','Accions'],rows.map(row=>
-      `<tr><td>${escape(row.id.toUpperCase())}<br>${date(row.createdOn)}</td><td>${link('clients',row.clientId,clientName(row.clientId))}<br>${escape(row.workshop)}</td><td>${escape(row.model)} · ${escape(row.description)}</td><td>${row.sizes.map(size=>escape(size.label)+': '+size.quantity).join(' · ')}</td><td>${escape(row.stage)} · ${row.status==='received'?'Rebut':'Pendent'}</td><td>${button('Document','print-production',row.id,true,'print')}${row.status==='pending'?button('Edita / rep','edit-production',row.id,true): (row.stage!=='Planxa'?button('Pas següent','next-production',row.id,true):'')+button('Prepara el lliurament','direct-delivery',row.id,true)}</td></tr>`))
+      `<tr><td>${escape(row.id.toUpperCase())}<br>${date(row.createdOn)}</td><td>${link('clients',row.clientId,clientName(row.clientId))}<br>${escape(row.workshop)}</td><td>${escape(row.model)} · ${escape(row.description)}</td><td>${row.sizes.map(size=>escape(size.label)+': '+size.quantity).join(' · ')}</td><td>${escape(row.stage)} · ${row.status==='received'?'Rebut':'Pendent'}</td><td>${button('Document','print-production',row.id,true,'print')}${productionActions(row)}</td></tr>`))
       : empty('Cap albarà de producció','Crea un albarà vinculat al client i al taller.');
   }
+  let deliveryFilter={client:'',status:''};
+  const invoicedDelivery=note=>state.invoices.some(invoice=>invoice.deliveryNoteIds.includes(note.id));
+  function deliveryFilters() {
+    const statuses=[['','Tots'],['workshop','Al taller'],['ready','A punt'],['delivered','Lliurat'],['uninvoiced','Lliurat sense facturar']];
+    return `<section class="panel"><div class="panel-body"><form data-form="delivery-filters" class="toolbar">
+      ${field('deliveryClient','Client',select('deliveryClient',[['','Tots'],...state.clients.map(c=>[c.id,c.name])],deliveryFilter.client))}
+      ${field('deliveryStatus','Estat del lliurament',select('deliveryStatus',statuses,deliveryFilter.status))}
+      <button type="submit" class="button">Filtra</button></form></div></section>`;
+  }
   function deliverySections() {
+    const {client,status}=deliveryFilter;
+    const production=phaseData().production.filter(row=>!client||row.clientId===client);
+    const notes=state.deliveryNotes.filter(note=>(!client||note.clientId===client)&&(!status||(status==='uninvoiced'?note.status==='delivered'&&!invoicedDelivery(note):note.status===status)));
+    const suppliers=phaseData().suppliers.filter(doc=>!client||doc.lines.some(line=>line.clientId===client));
     return heading('Albarans','Producció, lliuraments i costos dels proveïdors.')+
-      '<nav class="actions section-title" aria-label="Tipus d’albarà">'+[['produccio','Producció'],['lliurament','Lliurament'],['proveidor','Proveïdor']].map(([id,label])=>`<button class="button secondary" data-action="phase-scroll" data-id="${id}">${label}</button>`).join('')+'</nav>'+
-      `<section id="produccio" class="panel">${panelHead('Producció','Tall, confecció i planxa',button('Nou albarà de producció','new-production','',false,'plus'))}${productionTable(phaseData().production)}</section>
-      <section id="lliurament" class="panel">${panelHead('Lliurament','La factura es genera a partir dels albarans lliurats.',button('Nou albarà de lliurament','direct-delivery','',false,'plus')+button('Des d’un pressupost definitiu','new-delivery','',true))}${deliveryTable(state.deliveryNotes)}</section>
-      <section id="proveidor" class="panel">${panelHead('Proveïdor','Assigna cada concepte al client que l’ha de pagar.',button('Nou albarà de proveïdor','supplier-document','',false,'plus'))}<div class="panel-body">${phaseData().suppliers.length?phaseData().suppliers.map(supplierCard).join(''):empty('Cap albarà de proveïdor','Pots adjuntar una foto o un PDF i revisar els conceptes.')}</div></section>`+workshopPanel();
+      '<nav class="actions section-title" aria-label="Tipus d’albarà">'+[['produccio','Producció'],['lliurament','Lliurament'],['proveidor','Proveïdor']].map(([id,label])=>`<button class="button secondary" data-action="phase-scroll" data-id="${id}">${label}</button>`).join('')+'</nav>'+deliveryFilters()+
+      `<section id="produccio" class="panel">${panelHead('Producció','Tall, confecció i planxa',button('Nou albarà de producció','new-production','',false,'plus'))}${productionTable(production)}</section>
+      <section id="lliurament" class="panel">${panelHead('Lliurament','La factura es genera a partir dels albarans lliurats; en pots agrupar diversos del mateix client.',button('Nou albarà de lliurament','direct-delivery','',false,'plus')+button('Factura albarans lliurats','new-invoice','',true,'invoice')+button('Des d’un pressupost definitiu','new-delivery','',true))}${deliveryTable(notes)}</section>
+      <section id="proveidor" class="panel">${panelHead('Proveïdor','Assigna cada concepte al client que l’ha de pagar.',button('Nou albarà de proveïdor','supplier-document','',false,'plus'))}<div class="panel-body">${suppliers.length?suppliers.map(supplierCard).join(''):empty('Cap albarà de proveïdor','Pots adjuntar una foto o un PDF i revisar els conceptes.')}</div></section>`+workshopPanel();
   }
   function supplierCard(doc) {
+    const sum=lines=>lines.reduce((n,line)=>n+BigInt(line.unitCostCents)*BigInt(line.quantity),0n);
+    const purchaseState=line=>{
+      if(!line.clientId) return 'Despesa de casa';
+      const purchase=workflow().purchases.find(p=>p.id===line.purchaseId);
+      return purchase?.invoiceId ? link('facturacio',purchase.invoiceId,'Refacturat · '+(state.invoices.find(i=>i.id===purchase.invoiceId)?.number || purchase.invoiceId)) : 'Pendent de refacturar';
+    };
     return `<article class="record-card"><h3>${escape(doc.reference)} · ${escape(doc.supplierName)}</h3><p>${date(doc.createdOn)}</p>${attachmentList(doc.attachmentIds)}
-      ${table(['Concepte','Assignació','Unitats','Preu unitari'],doc.lines.map(line=>`<tr><td>${escape(line.description)}</td><td>${line.clientId?link('clients',line.clientId,clientName(line.clientId)):'New Op / sense client'}</td><td>${line.quantity}</td><td>${money(line.unitCostCents)}</td></tr>`))}</article>`;
+      ${table(['Concepte','Assignació','Unitats','Preu unitari','Estat'],doc.lines.map(line=>`<tr><td>${escape(line.description)}</td><td>${line.clientId?link('clients',line.clientId,clientName(line.clientId)):'Casa · New Op'}</td><td>${line.quantity}</td><td>${money(line.unitCostCents)}</td><td>${purchaseState(line)}</td></tr>`))}
+      <p class="small">Repercutible a clients: <strong>${money(sum(doc.lines.filter(line=>line.clientId)))}</strong> · Despesa de casa: <strong>${money(sum(doc.lines.filter(line=>!line.clientId)))}</strong> · Bases sense impost.</p></article>`;
   }
   function openProduction(id='',next=false) {
     const row=phaseData().production.find(row=>row.id===id)||{};
     const stages=['Tall','Confecció','Planxa'];
     const stage=next ? stages[stages.indexOf(row.stage)+1] : row.stage||stages[0];
-    const productionFields=[['workshop','Taller'],['model','Número de model'],['description','Descripció'],['fabric','Teixit'],['supplier','Proveïdor del teixit'],['code','Codi del teixit'],['color','Color']];
-    const fields=productionFields.map(([key,label],index)=>field(key,label,input(key,'text',row[key]||'',index<3?'required':''))).join('');
+    const productionFields=[['workshop','Taller','required maxlength="120"'],['model','Número de model','required maxlength="20"'],['description','Descripció','required maxlength="400"'],['fabric','Teixit','list="production-fabrics" maxlength="120"'],['supplier','Proveïdor del teixit','maxlength="120"'],['code','Codi del teixit','maxlength="80"'],['color','Color','maxlength="80"']];
+    const fields=productionFields.map(([key,label,extra])=>field(key,label,input(key,'text',row[key]||'',extra))).join('');
+    const stageChoices=next||(id&&row.previousId)?[stage]:stages;
     openDialog('Albarà de producció',dialogForm('production-note',
-      `<div class="form-grid">${field('clientId','Client',clientOptions(row.clientId||''))}${field('stage','Operació',select('stage',stages.map(s=>[s,s]),stage))}${fields}</div>
+      `${next?`<p class="dialog-intro">Continua ${escape(row.id.toUpperCase())} (${escape(row.stage)} rebut) amb les quantitats reals. Corregeix-les si el taller n’ha comptat unes altres.</p>`:''}<div class="form-grid">${field('clientId','Client',clientOptions(row.clientId||''))}${field('stage','Operació',select('stage',stageChoices.map(s=>[s,s]),stage))}${fields}</div><datalist id="production-fabrics">${state.fabrics.map(f=>`<option value="${escape(f.name)}"></option>`).join('')}</datalist>
       ${field('sizes','Quantitats per talla',`<textarea id="sizes" name="sizes" rows="2" required>${escape(row.sizes?.map(s=>s.label+':'+s.quantity).join(', ')||'')}</textarea>`,'Per exemple, S:5, M:10, L:15. En rebre les peces, indica el recompte real.')}
       ${field('notes','Observacions tècniques',`<textarea id="notes" name="notes" rows="3" maxlength="1200">${escape(row.notes||'')}</textarea>`)}
       ${id&&!next?'<label class="check-field"><input type="checkbox" name="received"> Marca com a rebut amb aquestes quantitats</label>':''}`,
-      'Desa l’albarà',`data-id="${escape(next?'':id)}"`),true);
+      'Desa l’albarà',`data-id="${escape(next?'':id)}"${next?` data-previous-id="${escape(id)}"`:''}`),true);
   }
   function printProduction(id) {
     const row=phaseData().production.find(row=>row.id===id);
@@ -846,8 +895,9 @@
     if(quantity<=0){notify('Totes les peces rebudes ja són en albarans de lliurament.');return;}
     const agreed=row && state.quotes.filter(q=>q.clientId===row.clientId&&q.phase==='final'&&invoiceableQuote(q)).reverse()
       .flatMap(q=>q.lines).find(line=>line.garmentCode.toLowerCase()===row.model.toLowerCase());
+    const description=row?.description.slice(0,160)||'';
     openDialog('Albarà de lliurament',dialogForm('direct-delivery',
-      `<div class="form-grid">${field('clientId','Client',clientOptions(row?.clientId||''))}${field('model','Model',input('model','text',row?.model||'','required maxlength="20"'))}${field('description','Descripció',input('description','text',row?.description||'','required'))}
+      `<div class="form-grid">${field('clientId','Client',clientOptions(row?.clientId||''))}${field('model','Model',input('model','text',row?.model||'','required maxlength="20"'))}${field('description','Descripció',input('description','text',description,'required maxlength="160"'))}
       ${field('quantity','Unitats per lliurar',input('quantity','number',quantity,'min="1" step="1" required'))}${field('price','Preu unitari acordat (€)',input('price','text',agreed?decimalMoney(agreed.unitPriceCents):'','inputmode="decimal" required'))}</div>`+humanReview('He comprovat el recompte final i el preu acordat.'),
       'Crea l’albarà',`data-production-id="${escape(id)}"`),true);
   }
@@ -856,7 +906,7 @@
     const index=++supplierSequence;
     const item=(label,name,type,value,attrs='')=>field(name+index,label,input(name,type,value,attrs).replace('id="'+name+'"','id="'+name+index+'"'));
     return `<fieldset class="supplier-row"><legend>Concepte del proveïdor</legend><div class="form-grid">${item('Concepte','concept','text',concept,'required')}${item('Unitats','units','number',units,'required min="1" step="1"')}${item('Cost unitari (€)','price','text',price,'required inputmode="decimal"')}
-      ${field('allocation'+index,'Assigna a',select('allocation',[['','New Op / sense client'],...state.clients.map(c=>[c.id,c.name])],clientId).replace('id="allocation"','id="allocation'+index+'"'))}</div>${unknown?`<p class="field-help">Revisa el client anotat: ${escape(unknown)}</p>`:''}${button('Treu el concepte','supplier-remove','',true)}</fieldset>`;
+      ${field('allocation'+index,'Assigna a',select('allocation',[...(unknown?[['__unknown','Revisa: «'+unknown+'»']]:[]),['','Casa · New Op (no es repercuteix)'],...state.clients.map(c=>[c.id,c.name])],unknown?'__unknown':clientId).replace('id="allocation"','id="allocation'+index+'"').replace('aria-describedby="allocation-error"','aria-describedby="allocation'+index+'-error"'))}</div>${unknown?`<p class="field-help">El client anotat «${escape(unknown)}» no coincideix amb cap fitxa. Tria’n un o marca «Casa» abans de desar.</p>`:''}${button('Treu el concepte','supplier-remove','',true)}</fieldset>`;
   }
   function openSupplierDocument() {
     openDialog('Albarà de proveïdor',dialogForm('supplier-document',
@@ -1044,6 +1094,7 @@
       <div><small>Client fictici</small><br><strong>${escape(clientName(entity.clientId))}</strong>${client?.email ? `<br>${escape(client.email)}` : ''}</div></div>
       ${table(['Ref. / descripció','Teixit','Unitats','Preu unitari','Import'], [...rows,`<tr class="paper-total"><th scope="row" colspan="2">Total de peces</th><td>${units}</td><td></td><td>${money(entity.totals.baseCents)}</td></tr>`])}
       ${totals(entity.totals,entity.taxRateBps)}
+      ${!delivery && !invoice && entity.phase!=='final' ? quoteVolumePaper(entity) : ''}
       ${entity.terms ? `<section class="paper-notes"><h4>Condicions de la proposta</h4><p class="notes">${escape(entity.terms)}</p></section>` : ''}
       ${entity.notes ? `<section class="paper-notes"><h4>Observacions</h4><p class="notes">${escape(entity.notes)}</p></section>` : ''}
       ${delivery ? '' : '<section class="paper-notes"><h4>Acceptació del pressupost</h4><div class="paper-signatures"><span>Signatura del client</span><span>Signatura de NEW OP</span></div></section>'}
