@@ -296,7 +296,7 @@
   }
 
   function checkState(s, {allowRealContacts = false} = {}) {
-    optionalExact(s, ['schemaVersion', 'scenarioDate', 'revision', 'sequence', 'clients', 'fabrics', 'quotes', 'deliveryNotes', 'invoices', 'tasks', 'catalog'], ['workflow'], 'state');
+    optionalExact(s, ['schemaVersion', 'scenarioDate', 'revision', 'sequence', 'clients', 'fabrics', 'quotes', 'deliveryNotes', 'invoices', 'tasks', 'catalog'], ['workflow','phaseOne'], 'state');
     if (s.schemaVersion !== SCHEMA_VERSION) bad('schemaVersion');
     if (s.scenarioDate !== SCENARIO_DATE) bad('scenarioDate');
     if (!isInt0(s.revision)) bad('revision');
@@ -372,7 +372,11 @@
     const numbers = new Set();
     s.quotes.forEach((q, i) => {
       const p = 'quotes[' + i + ']';
-      exact(q, ['id', 'number', 'clientId', 'createdOn', 'notes', 'tariff', 'status', 'revision', 'reviewedRevision', 'lines', 'taxRateBps', 'totals'], p);
+      optionalExact(q, ['id', 'number', 'clientId', 'createdOn', 'notes', 'tariff', 'status', 'revision', 'reviewedRevision', 'lines', 'taxRateBps', 'totals'], ['phase','initialQuoteId','terms','costing'], p);
+      if (q.phase !== undefined && !['initial','final'].includes(q.phase)) bad(p+'.phase');
+      if (q.terms !== undefined && (typeof q.terms!=='string'||q.terms.length>1200)) bad(p+'.terms');
+      if (q.costing !== undefined) checkCosting(q.costing,p+'.costing');
+      if (q.initialQuoteId !== undefined && (q.phase!=='final' || !s.quotes.some(x=>x.id===q.initialQuoteId && x.clientId===q.clientId && x.phase==='initial' && x.status!=='draft'))) bad(p+'.initialQuoteId');
       if (!isStr(q.number) || numbers.has(q.number)) bad(p + '.number');
       numbers.add(q.number);
       if (!clientIds.has(q.clientId)) bad(p + '.clientId');
@@ -398,18 +402,18 @@
     numbers.clear();
     s.deliveryNotes.forEach((d, i) => {
       const p = 'deliveryNotes[' + i + ']';
-      exact(d, ['id', 'number', 'clientId', 'quoteId', 'createdOn', 'status', 'lines', 'taxRateBps', 'totals'], p);
+      optionalExact(d, ['id', 'number', 'clientId', 'quoteId', 'createdOn', 'status', 'lines', 'taxRateBps', 'totals'], ['productionId'], p);
       if (!isStr(d.number) || numbers.has(d.number)) bad(p + '.number');
       numbers.add(d.number);
       if (!clientIds.has(d.clientId)) bad(p + '.clientId');
-      if (!quoteIds.has(d.quoteId)) bad(p + '.quoteId');
+      if (d.quoteId!==null && !quoteIds.has(d.quoteId)) bad(p + '.quoteId');
       const q = quotesById.get(d.quoteId);
-      if (q.clientId !== d.clientId) bad(p + '.clientId', 'El client de l\'albarà no coincideix amb el del pressupost.');
-      if (q.status === 'draft') bad(p + '.quoteId', 'L\'albarà prové d\'un pressupost sense aprovar.');
+      if (q && q.clientId !== d.clientId) bad(p + '.clientId', 'El client de l\'albarà no coincideix amb el del pressupost.');
+      if (q && (q.status === 'draft' || q.phase === 'initial')) bad(p + '.quoteId', 'L\'albarà prové d\'un pressupost sense aprovar.');
       if (!isDate(d.createdOn)) bad(p + '.createdOn');
       if (!DELIVERY_STATUSES.includes(d.status)) bad(p + '.status');
       checkLines(d.lines, p + '.lines', fabricIds);
-      d.lines.forEach((l, j) => {
+      if (q) d.lines.forEach((l, j) => {
         const src = q.lines.find((x) => x.id === l.id);
         if (!src || !lineSnapshotEq(src, l)) bad(p + '.lines[' + j + ']', 'La línia no coincideix amb el pressupost.');
       });
@@ -420,7 +424,7 @@
 
     // Quantities in every delivery note are reserved, including work still at the workshop.
     const reserved = new Map();
-    for (const d of s.deliveryNotes) for (const l of d.lines) {
+    for (const d of s.deliveryNotes.filter(note=>note.quoteId!==null)) for (const l of d.lines) {
       const key = d.quoteId + '/' + l.id;
       const amount = (reserved.get(key) || 0n) + BigInt(l.quantity);
       if (amount > BigInt(quotesById.get(d.quoteId).lines.find(x => x.id === l.id).quantity)) bad('deliveryNotes', 'La suma dels albarans supera la quantitat pressupostada.');
@@ -493,6 +497,8 @@
       if (typeof g.entityId !== 'string' || !ids[g.entityType].has(g.entityId)) bad(p + '.entityId');
     });
     if (has(s, 'workflow')) checkWorkflow(s);
+    if (has(s, 'phaseOne')) checkPhaseOne(s);
+    else if(s.deliveryNotes.some(d=>has(d,'productionId'))) bad('deliveryNotes.productionId');
     return s;
   }
 
@@ -751,6 +757,7 @@
         id, number: nextNumber(s, 'quotes', 'PRE'), clientId: c.clientId, createdOn: s.scenarioDate, notes: c.notes, tariff: c.tariff,
         status: 'draft', revision: 1, reviewedRevision: null, lines, taxRateBps: s.catalog.taxRateBps, totals: quoteTotals(s, lines)
       };
+      if(c.phase==='initial') quote.phase='initial';
       if (c.meetingId) {
         const meeting = wfGet(s,'meetings',c.meetingId);
         if (meeting.clientId !== c.clientId) fail('CLIENT_MISMATCH','clientId','La reunió és d’un altre client.');
@@ -855,7 +862,7 @@
         if (!isObj(l) || typeof l.quoteLineId !== 'string' || l.quoteLineId === '') fail('VALIDATION_ERROR', 'lines[' + i + '].quoteLineId', 'Línia no vàlida.');
       });
       const q = getOrFail(s, 'quotes', c.quoteId, 'quoteId', 'No s\'ha trobat el pressupost.');
-      if (q.status === 'draft') fail('INVALID_TRANSITION', 'quoteId', 'El pressupost ha d\'estar aprovat.');
+      if (q.status === 'draft' || q.phase === 'initial') fail('INVALID_TRANSITION', 'quoteId', 'El pressupost ha d\'estar aprovat.');
       if (new Set(c.lines.map((l) => l.quoteLineId)).size !== c.lines.length) fail('DUPLICATE_REFERENCE', 'lines', 'Hi ha línies repetides.');
       c.lines.forEach((l, i) => {
         if (!q.lines.some((x) => x.id === l.quoteLineId)) fail('NOT_FOUND', 'lines[' + i + '].quoteLineId', 'La línia no pertany al pressupost.');
@@ -1012,6 +1019,104 @@
     for (const i of s.invoices) {const b=balance(s,'invoice',i.id);if (b.outstandingCents<0 || (i.paymentStatus==='paid_simulated'&&b.outstandingCents!==0)) bad('workflow.receipts');}
     const sent=new Set(),response=new Set();w.quoteEvents.forEach(e=>{check(e,['id','quoteId','clientId','kind','occurredOn','createdAt','note'],'quoteEvents');client(e);at(e);dateValue(e.occurredOn,'occurredOn');if (typeof e.note!=='string'||e.note.length>500||!s.quotes.some(q=>q.id===e.quoteId&&q.clientId===e.clientId)||!['sent_simulated','response_recorded'].includes(e.kind)) bad('workflow.quoteEvents');const seen=e.kind==='sent_simulated'?sent:response;if (seen.has(e.quoteId)) bad('workflow.quoteEvents');seen.add(e.quoteId);});
   }
+  const phaseOne = s => s.phaseOne ||= {production:[],suppliers:[]};
+  const stages = ['Tall','Confecció','Planxa'];
+  function checkCosting(c,path) {
+    exact(c,['materials','trims','sewing','pressing','margin','discounts'],path);
+    if (![c.materials,c.trims,c.sewing,c.pressing].every(isMoney) || !isInt0(c.margin) || c.margin>100000 || !Array.isArray(c.discounts) || c.discounts.length!==4 || c.discounts.some(n=>!isInt0(n)||n>10000)) bad(path);
+  }
+  function checkPhaseOne(s) {
+    const phase=exact(s.phaseOne,['production','suppliers'],'phaseOne');
+    for(const name of ['production','suppliers']) uniqueIds(arr(phase[name],name),name);
+    for(const row of phase.production) {
+      if(!s.clients.some(c=>c.id===row.clientId) || !stages.includes(row.stage) || !isDate(row.createdOn) || !['pending','received'].includes(row.status)) bad('production');
+      if(!Array.isArray(row.sizes)||!row.sizes.length||row.sizes.some(size=>!isStr(size.label)||!isQty(size.quantity))||new Set(row.sizes.map(size=>normName(size.label))).size!==row.sizes.length) bad('production.sizes');
+      if(![row.workshop,row.model,row.description].every(isStr)) bad('production');
+    }
+    for(const note of s.deliveryNotes.filter(d=>d.productionId)) {
+      const row=phase.production.find(p=>p.id===note.productionId&&p.clientId===note.clientId&&p.status==='received');
+      if(!row || note.quoteId!==null) bad('deliveryNotes.productionId');
+      const delivered=s.deliveryNotes.filter(d=>d.productionId===row.id).flatMap(d=>d.lines).reduce((sum,l)=>sum+l.quantity,0);
+      if(delivered>row.sizes.reduce((sum,l)=>sum+l.quantity,0)) bad('deliveryNotes.productionId');
+    }
+    for(const doc of phase.suppliers) {
+      if(!isStr(doc.reference)||!isStr(doc.supplierName)||!isDate(doc.createdOn)||!Array.isArray(doc.lines)||!doc.lines.length) bad('suppliers');
+      attachmentIds(s,doc.attachmentIds);
+      for(const line of doc.lines) {
+        if(!isStr(line.description)||!isQty(line.quantity)||!isMoney(line.unitCostCents)) bad('supplier.lines');
+        if(line.purchaseId && !s.workflow?.purchases.some(p=>p.id===line.purchaseId&&p.clientId===line.clientId&&p.quantity===line.quantity&&p.unitCostCents===line.unitCostCents)) bad('supplier.purchase');
+        if(!line.purchaseId && line.clientId!==null) bad('supplier.client');
+      }
+    }
+  }
+
+  Object.assign(HANDLERS,{
+    SAVE_QUOTE_COSTING(s,c) {
+      const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');
+      if(q.status!=='draft') fail('INVALID_TRANSITION','id','Edita l’escandall mentre el pressupost sigui un esborrany.');
+      checkCosting(c.costing,'costing');
+      const line=q.lines.find(l=>l.id===c.lineId);
+      if(!line) fail('NOT_FOUND','lineId','Selecciona una peça.');
+      const b=c.costing, cost=BigInt(b.materials)+BigInt(b.trims)+BigInt(b.sewing)+BigInt(b.pressing);
+      const tier=[25,50,100,300].reduce((index,min,i)=>line.quantity>=min?i:index,0);
+      line.unitPriceCents=Number((cost*BigInt(10000+b.margin)*BigInt(10000-b.discounts[tier])+50000000n)/100000000n);
+      line.priceMode='manual';q.costing=clone(b);q.terms=String(c.terms||'').trim().slice(0,1200);
+      q.totals=quoteTotals(s,q.lines);q.revision++;q.reviewedRevision=null;return q;
+    },
+    CREATE_FINAL_QUOTE(s,c,o) {
+      reviewed(c);
+      const initial=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');
+      if(initial.phase!=='initial'||initial.status==='draft'||s.quotes.some(q=>q.initialQuoteId===initial.id)) fail('INVALID_TRANSITION','id','Cal un orientatiu revisat sense definitiu.');
+      const final=clone(initial);
+      final.id=nextId(s,'pre','quotes');final.number=nextNumber(s,'quotes','PRE');final.createdOn=stamp(o).slice(0,10);
+      final.lines=final.lines.map((line,i)=>({...line,id:final.id+'-l'+(i+1)}));
+      final.phase='final';final.initialQuoteId=initial.id;final.status='draft';final.revision=1;final.reviewedRevision=null;
+      s.quotes.push(final);
+      const meeting=s.workflow?.meetings.find(m=>m.quoteIds.includes(initial.id));
+      if(meeting) meeting.quoteIds.push(final.id);
+      return final;
+    },
+    SAVE_PRODUCTION(s,c,o) {
+      clientCheck(s,c.clientId);
+      const rows=phaseOne(s).production, existing=rows.find(row=>row.id===c.id);
+      if(c.id&&(!existing||existing.clientId!==c.clientId||existing.status==='received')) fail('INVALID_TRANSITION','id','Aquest albarà de taller ja està tancat.');
+      const row={id:existing?.id||'tpr-'+(++s.sequence),clientId:c.clientId,stage:c.stage,createdOn:existing?.createdOn||stamp(o).slice(0,10),status:c.received?'received':'pending',sizes:c.sizes,
+        workshop:textValue(c.workshop,'workshop',120),model:textValue(c.model,'model',100),description:textValue(c.description,'description',400),fabric:String(c.fabric||'').trim().slice(0,120),supplier:String(c.supplier||'').trim().slice(0,120),code:String(c.code||'').trim().slice(0,80),color:String(c.color||'').trim().slice(0,80),notes:String(c.notes||'').trim().slice(0,1200)};
+      if(existing) rows[rows.indexOf(existing)]=row;else rows.push(row);
+      return row;
+    },
+    CREATE_DIRECT_DELIVERY(s,c,o) {
+      reviewed(c);clientCheck(s,c.clientId);
+      const id=nextId(s,'alb','deliveryNotes');
+      const line={id:id+'-l1',garmentCode:textValue(c.model,'model',20),label:textValue(c.description,'description',160),fabricId:null,quantity:c.quantity,unitPriceCents:c.unitPriceCents,priceMode:'manual'};
+      if(!isQty(line.quantity)||!isMoney(line.unitPriceCents)) fail('VALIDATION_ERROR','quantity','Revisa les unitats i el preu.');
+      const lines=[line],taxRateBps=s.catalog.taxRateBps;
+      if(c.productionId) {
+        const row=s.phaseOne?.production.find(row=>row.id===c.productionId&&row.clientId===c.clientId&&row.status==='received');
+        const used=s.deliveryNotes.filter(note=>note.productionId===c.productionId).flatMap(note=>note.lines).reduce((sum,l)=>sum+l.quantity,0);
+        if(!row||used+line.quantity>row.sizes.reduce((sum,size)=>sum+size.quantity,0)) fail('QUANTITY_EXCEEDED','quantity','La quantitat supera les peces rebudes que queden per lliurar.');
+      }
+      const document={id,number:nextNumber(s,'deliveryNotes','ALB'),clientId:c.clientId,quoteId:null,createdOn:stamp(o).slice(0,10),status:'ready',lines,taxRateBps,totals:quoteTotals(s,lines),...(c.productionId?{productionId:c.productionId}:{})};
+      s.deliveryNotes.push(document);return document;
+    },
+    SAVE_SUPPLIER_DOCUMENT(s,c,o) {
+      reviewed(c);
+      const docs=phaseOne(s).suppliers;
+      const reference=textValue(c.reference,'reference',100),supplierName=textValue(c.supplierName,'supplierName',120);
+      if(docs.some(d=>normName(d.reference)===normName(reference)&&normName(d.supplierName)===normName(supplierName))) fail('DUPLICATE_REFERENCE','reference','Aquest albarà ja està registrat.');
+      if(!Array.isArray(c.lines)||!c.lines.length||c.lines.length>50) fail('VALIDATION_ERROR','lines','Indica entre 1 i 50 conceptes.');
+      const ids=attachmentIds(s,c.attachmentIds),createdOn=dateValue(c.createdOn,'createdOn');
+      const lines=c.lines.map((line,index)=>{
+        const description=textValue(line.description,'description',160),clientId=line.clientId||null;
+        if(!isQty(line.quantity)||!isMoney(line.unitCostCents)) fail('VALIDATION_ERROR','lines','Revisa les quantitats i els imports.');
+        const purchase=clientId?HANDLERS.CREATE_PURCHASE(s,{clientId,supplierName,reference:reference+' · '+(index+1),purchasedOn:createdOn,description,quantity:line.quantity,unitCostCents:line.unitCostCents,taxRateBps:s.catalog.taxRateBps,attachmentIds:ids},o):null;
+        return {description,clientId,quantity:line.quantity,unitCostCents:line.unitCostCents,purchaseId:purchase?.id||null};
+      });
+      const doc={id:'sup-'+(++s.sequence),reference,supplierName,createdOn,attachmentIds:ids,lines};
+      docs.push(doc);return doc;
+    },
+  });
+
   Object.assign(HANDLERS,{
     ADD_CLIENT_NOTE(s,c,o) {clientCheck(s,c.clientId);const e={id:nextId(s,'not','clientNotes'),clientId:c.clientId,kind:c.kind,text:textValue(c.text,'text'),occurredOn:dateValue(c.occurredOn,'occurredOn',true),dueDate:dateValue(c.dueDate,'dueDate',true),attachmentIds:attachmentIds(s,c.attachmentIds),sourceRefs:refsFor(s,c.sourceRefs||[],c.clientId),createdAt:stamp(o)};if (!['note','change','fitting','delivery'].includes(e.kind)) fail('VALIDATION_ERROR','kind','Tipus de nota no vàlid.');workflow(s).clientNotes.push(e);return e;},
     RECORD_MEETING(s,c,o) {clientCheck(s,c.clientId);const e={id:nextId(s,'reu','meetings'),clientId:c.clientId,notes:textValue(c.notes,'notes'),summary:textValue(c.summary,'summary'),attachmentIds:attachmentIds(s,c.attachmentIds),createdAt:stamp(o),quoteIds:[]};workflow(s).meetings.push(e);return e;},
@@ -1020,6 +1125,7 @@
       const meeting=c.meetingId?wfGet(s,'meetings',c.meetingId):null;if(meeting&&meeting.clientId!==c.clientId) fail('CLIENT_MISMATCH','meetingId','La reunió és d’un altre client.');
       const id=nextId(s,'pre','quotes'),lines=manualLines(s,c.lines,id);for (const l of lines) if(l.priceMode==='tariff') l.unitPriceCents=bandPrice(tariffByCode(s,c.tariff),l.quantity);
       const q={id,number:nextNumber(s,'quotes','PRE'),clientId:c.clientId,createdOn:stamp(o).slice(0,10),notes:meeting?meeting.notes:'Pressupost manual revisat.',tariff:c.tariff,status:'draft',revision:1,reviewedRevision:null,lines,taxRateBps:s.catalog.taxRateBps,totals:quoteTotals(s,lines)};
+      if(c.phase==='initial') q.phase='initial';
       workflow(s);s.quotes.push(q);if(meeting)meeting.quoteIds.push(id);return q;
     },
     UPDATE_QUOTE_LINES(s,c) {const q=getOrFail(s,'quotes',c.id,'id','Pressupost no disponible.');if(q.status!=='draft')fail('INVALID_TRANSITION','id','Només es poden editar esborranys.');if(c.expectedQuoteRevision!==undefined&&c.expectedQuoteRevision!==q.revision)fail('STALE_REVIEW','expectedQuoteRevision','El pressupost ha canviat.');if(c.tariff!==undefined){if(!TARIFF_CODES.includes(c.tariff))fail('VALIDATION_ERROR','tariff','Selecciona A, B o C.');q.tariff=c.tariff;}const lines=manualLines(s,c.lines,q.id,q.lines);for(const l of lines)if(l.priceMode==='tariff')l.unitPriceCents=bandPrice(tariffByCode(s,q.tariff),l.quantity);q.lines=lines;q.totals=quoteTotals(s,lines);q.revision++;q.reviewedRevision=null;return q;},

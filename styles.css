@@ -93,3 +93,15 @@ dialog.document-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;display:fl
 .attachment-thumb{display:block;width:86px;height:62px;object-fit:cover;border:1px solid var(--line);border-radius:6px}
 .calendar-today{border-color:#a27846;background:#fbf2e5}
 @media print{body:not(:has(#print-document > *)) #app{display:block!important}}
+/* Fase 1 · carpetes, agenda i documents de taller */
+.folder-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 26px}
+.folder-card{--folder:#5b4130;--folder-bg:#f2e9dd;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:22px;min-height:126px;border:1px solid var(--line);border-radius:14px;background:var(--folder-bg);color:var(--folder);text-decoration:none}
+.folder-card:hover{border-color:var(--folder)}.folder-card strong{font-size:clamp(16px,2vw,24px)}.folder-card>.icon:first-child{grid-column:1/-1;width:42px;height:42px}
+.folder-clients{--folder:#824613;--folder-bg:#fff0df}.folder-facturacio{--folder:#204b83;--folder-bg:#eaf2fd}.folder-pressupostos{--folder:#275b40;--folder-bg:#e7f3ea}.folder-albarans{--folder:#873859;--folder-bg:#fbe9f0}
+.phase-chip{font-size:12px;font-weight:650;padding:5px 9px;border-radius:30px}.phase-chip.urgent{color:#8d2525;background:#fee7e7}.phase-chip.soon{color:#81430b;background:#ffefd9}.phase-chip.planned{color:#295841;background:#e5f3e7}
+.task-row-content a,.nav-link{font-size:15px}.panel-head p,.task-row-content small{font-size:13px}.supplier-row{border:1px solid var(--line);padding:12px;margin:12px 0;border-radius:10px;min-inline-size:0}
+.costing-tiers{list-style:none;display:grid;gap:6px;padding:0}.costing-tiers li{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:7px;background:var(--bg)}
+#produccio,#lliurament,#proveidor{scroll-margin:20px}
+@media(max-width:780px){.folder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.folder-card{min-height:105px;padding:15px}}
+@media(max-width:360px){.folder-grid{grid-template-columns:1fr}}
+.calendar-grid .calendar-event{list-style:none;margin-left:-16px;padding:8px;border-radius:7px;border-left:3px solid var(--folder);background:var(--folder-bg);color:var(--folder)}

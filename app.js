@@ -19,6 +19,7 @@
   const path = (module, id) => '#/' + module + (id ? '/' + encodeURIComponent(id) : '');
   const safeHash = hash => /^#\/(clients|pressupostos|albarans|facturacio|seguiment|teixits)\/[^/]+$/.test(hash || '') ? hash : '#/inici';
   const iconPaths = {
+    folder:'M3 6h7l2 2h9v11H3z',
     home:'M3 10 12 3l9 7M5 9v11h5v-6h4v6h5V9',
     quote:'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5',
     delivery:'M3 6h12v12H3zM15 10h4l3 4v4h-7M5 6V3h8v3M7 18v3M18 18v3',
@@ -313,8 +314,8 @@
   function attachmentChoices(selected=[]) {
     return workflow().attachments.length ? `<fieldset class="source-picker"><legend>Fotos d’aquest navegador (màxim 5 per registre)</legend>${workflow().attachments.map(a => `<label class="check-field compact"><input type="checkbox" name="attachmentIds" value="${escape(a.id)}"${selected.includes(a.id) ? ' checked' : ''}><span>${escape(a.filename)} · ${new Intl.NumberFormat('ca-ES').format(a.sizeBytes)} B</span></label>`).join('')}</fieldset>` : '<p class="small muted">Encara no has pujat arxius privats.</p>';
   }
-  function attachmentPicker(withSample=false) {
-    return `<details class="attachment-picker"><summary>Adjunta una foto</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Foto',input('attachmentFile','file','','accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Adjunta la foto','upload-attachment','',true)}${withSample ? button('Usa una foto fictícia','sample-meeting-photo','',true) : ''}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
+  function attachmentPicker(withSample=false, supplier=false) {
+    return `<details class="attachment-picker"><summary>${supplier?'Adjunta una foto o PDF':'Adjunta una foto'}</summary><p class="small muted">JPEG, PNG o WebP de fins a 1 MiB. La foto es desa en aquest navegador. Escriu i revisa el resum abans de generar el pressupost.</p>${field('attachmentFile','Foto',input('attachmentFile','file','',supplier?'accept="image/jpeg,image/png,image/webp,application/pdf"':'accept="image/jpeg,image/png,image/webp"'))}<div class="actions">${button('Adjunta la foto','upload-attachment','',true)}${withSample ? button('Usa una foto fictícia','sample-meeting-photo','',true) : ''}<button type="button" class="button secondary" data-action="cancel-attachment" hidden>Cancel·la la pujada</button></div><div id="attachment-status" role="status" aria-live="polite"></div><div id="attachment-choices">${attachmentChoices()}</div><p class="field-help">Els arxius pujats queden al teu espai; selecciona’ls i desa el registre per vincular-los. El backup JSON només inclou les metadades.</p></details>`;
   }
   function humanReview(label='He revisat el contingut, les dates i els imports. Aquesta acció només registra dades de demostració.') {
     return `<label class="check-field"><input type="checkbox" name="reviewed" id="workflow-reviewed" aria-describedby="workflow-reviewed-error"><span>${escape(label)}<span class="field-error" id="workflow-reviewed-error"></span></span></label>`;
@@ -342,7 +343,7 @@
     const q=state.quotes.find(x=>x.id===route.id);
     if (!q) return content;
     const meeting=workflow().meetings.find(m=>(m.quoteIds || []).includes(q.id));
-    return content + `<section class="panel">${panelHead('El fil del pressupost','Origen, resposta i anticips',q.status==='draft' ? button('Afegeix o canvia peces','edit-manual-quote',q.id,true) : '')}<div class="panel-body">${meeting ? `<p class="small">Reunió del ${escape(formatDateTime(meeting.createdAt))}: ${escape(meeting.summary)}</p>${attachmentList(meeting.attachmentIds)}` : '<p class="small muted">Sense reunió vinculada; les notes originals del pressupost es conserven.</p>'}${quoteEventMarkup(q)}${['approved','sent_simulated'].includes(q.status) && !q.lines.some(line=>remainingQuantity(q,line)>0) ? `<div class="hint">Totes les unitats ja tenen albarà.<div class="source-links">${state.deliveryNotes.filter(d=>d.quoteId===q.id).map(d=>link('albarans',d.id,d.number)).join('')}</div></div>` : ''}<div class="actions">${button('Registra una resposta','quote-response',q.id,true)}${button('Prepara un correu revisable','quote-followup',q.id,true)}${['approved','sent_simulated'].includes(q.status) ? button('Prepara una proforma','new-proforma',q.id,true) : ''}</div></div></section>`;
+    return content + quotePhasePanel(q) + `<section class="panel">${panelHead('El fil del pressupost','Origen, resposta i anticips',q.status==='draft' ? button('Afegeix o canvia peces','edit-manual-quote',q.id,true) : '')}<div class="panel-body">${meeting ? `<p class="small">Reunió del ${escape(formatDateTime(meeting.createdAt))}: ${escape(meeting.summary)}</p>${attachmentList(meeting.attachmentIds)}` : '<p class="small muted">Sense reunió vinculada; les notes originals del pressupost es conserven.</p>'}${quoteEventMarkup(q)}${['approved','sent_simulated'].includes(q.status) && !q.lines.some(line=>remainingQuantity(q,line)>0) ? `<div class="hint">Totes les unitats ja tenen albarà.<div class="source-links">${state.deliveryNotes.filter(d=>d.quoteId===q.id).map(d=>link('albarans',d.id,d.number)).join('')}</div></div>` : ''}<div class="actions">${button('Registra una resposta','quote-response',q.id,true)}${button('Prepara un correu revisable','quote-followup',q.id,true)}${invoiceableQuote(q) ? button('Prepara una proforma','new-proforma',q.id,true) : ''}</div></div></section>`;
   }
   function quoteEventMarkup(q) {
     const events=workflow().quoteEvents.filter(e=>e.quoteId===q.id).slice().sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
@@ -363,16 +364,16 @@
     start.setUTCDate(start.getUTCDate() - (start.getUTCDay()+6)%7);
     const day = offset => new Date(start.getTime()+offset*86400000).toISOString().slice(0,10);
     const events = [
-      ...state.tasks.filter(t=>t.status==='pending').map(t=>({type:'Seguiment',on:t.dueDate,text:t.text,client:t.clientId,module:'seguiment',id:t.id})),
-      ...workflow().clientNotes.filter(n=>['fitting','delivery'].includes(n.kind)).map(n=>({type:noteKinds[n.kind],on:n.dueDate || n.occurredOn,text:n.text,client:n.clientId,module:'clients',id:n.clientId})),
-      ...workflow().workshopEntries.map(w=>({type:'Taller',on:w.dueDate,text:w.workshopName+' · '+w.text,client:w.clientId,module:'albarans',id:w.deliveryNoteId}))
+      ...state.tasks.filter(t=>t.status==='pending').map(t=>({tone:'clients',type:'Seguiment',on:t.dueDate,text:t.text,client:t.clientId,module:'seguiment',id:t.id})),
+      ...workflow().clientNotes.filter(n=>['fitting','delivery'].includes(n.kind)).map(n=>({tone:n.kind==='delivery'?'albarans':'clients',type:noteKinds[n.kind],on:n.dueDate || n.occurredOn,text:n.text,client:n.clientId,module:'clients',id:n.clientId})),
+      ...workflow().workshopEntries.map(w=>({tone:'albarans',type:'Taller',on:w.dueDate,text:w.workshopName+' · '+w.text,client:w.clientId,module:'albarans',id:w.deliveryNoteId}))
     ];
     const nav = (offset,label) => `<a class="button secondary" href="${path('calendari',day(offset))}">${label}</a>`;
     const days = ['Dilluns','Dimarts','Dimecres','Dijous','Divendres','Dissabte','Diumenge'];
     return heading('Calendari','Tasques, proves i lliuraments en una agenda setmanal.',button('Nou seguiment','new-task','',false,'plus')+button('Afegeix una entrada','new-client-note','',true,'plus'))+
       `<section class="panel pad"><div class="actions">${nav(-7,'Setmana anterior')}<a class="button secondary" href="#/calendari">Avui</a>${nav(7,'Setmana següent')}</div><h2>${date(day(0))} - ${date(day(6))}</h2><div class="calendar-grid">${days.map((name,index)=>{
         const items = events.filter(event=>event.on===day(index));
-        return `<article class="record-card${day(index)===today ? ' calendar-today' : ''}"><h3>${name} · ${date(day(index))}${day(index)===today ? ' <span class="badge">Avui</span>' : ''}</h3>${items.length ? `<ul>${items.map(event=>`<li>${link(event.module,event.id,event.text)}<br><small>${escape(event.type)} · ${escape(clientName(event.client))}</small></li>`).join('')}</ul>` : '<p class="muted">Sense cites</p>'}</article>`;
+        return `<article class="record-card${day(index)===today ? ' calendar-today' : ''}"><h3>${name} · ${date(day(index))}${day(index)===today ? ' <span class="badge">Avui</span>' : ''}</h3>${items.length ? `<ul>${items.map(event=>`<li class="calendar-event folder-${event.tone}">${link(event.module,event.id,event.text)}<br><small>${escape(event.type)} · ${escape(clientName(event.client))}</small></li>`).join('')}</ul>` : '<p class="muted">Sense cites</p>'}</article>`;
       }).join('')}</div></section>`;
   }
   function renderTasks() {return renderTasksBase() + (!route.id ? timelinePanel() : '');}
@@ -438,7 +439,7 @@
   }
   function renderDeliveries() {
     const content=renderDeliveriesBase();
-    return !route.id ? content + workshopPanel() : content;
+    return !route.id ? deliverySections() : content;
   }
   function workshopPanel() {
     const {from, to} = weekRange || defaultWeekRange();
@@ -506,7 +507,7 @@
     $('#print-document').innerHTML=markup;
     openDialog(title,`<div class="actions">${button('Imprimeix el document','print','',false,'print')}</div>${markup}`,true);
   }
-  function sampleMeetingPhoto() {
+  function sampleMeetingPhoto(lines=['Reunió de mostra','25 camises de lli','Preparar el pressupost'],filename='llibreta-de-mostra.png') {
     const canvas=document.createElement('canvas');
     canvas.width=600;canvas.height=400;
     const ctx=canvas.getContext('2d');
@@ -515,8 +516,8 @@
     for(let y=85;y<390;y+=43){ctx.beginPath();ctx.moveTo(30,y);ctx.lineTo(570,y);ctx.stroke();}
     ctx.fillStyle='#302b25';ctx.font='bold 21px sans-serif';ctx.fillText('NEW OP · NOTES FICTÍCIES',35,55);
     ctx.font='italic 26px serif';
-    ['Reunió de mostra','25 camises de lli','Preparar el pressupost'].forEach((line,index)=>ctx.fillText(line,45,119+43*index));
-    return new Promise(resolve=>canvas.toBlob(blob=>resolve(new File([blob],'llibreta-de-mostra.png',{type:'image/png'})),'image/png'));
+    lines.forEach((line,index)=>ctx.fillText(line,45,119+43*index));
+    return new Promise(resolve=>canvas.toBlob(blob=>resolve(new File([blob],filename,{type:'image/png'})),'image/png'));
   }
   async function uploadAttachment(form, file=form.elements.attachmentFile?.files?.[0]) {
     clearErrors(form);
@@ -555,6 +556,19 @@
   }
   async function workflowAction(action,id,el) {
     switch(action) {
+      case 'phase-scroll':document.getElementById(id)?.scrollIntoView({block:'start'});break;
+      case 'quote-costing':openCosting(id);break;
+      case 'quote-final':openDialog('Crea el pressupost definitiu',dialogForm('quote-final',humanReview('El client ha acceptat l’orientació. Revisaré els imports definitius abans d’aprovar.'),'Crea l’esborrany definitiu',`data-id="${escape(id)}"`));break;
+      case 'new-production':openProduction();break;
+      case 'edit-production':openProduction(id);break;
+      case 'next-production':openProduction(id,true);break;
+      case 'print-production':printProduction(id);break;
+      case 'direct-delivery':openDirectDelivery(id);break;
+      case 'supplier-document':openSupplierDocument();break;
+      case 'supplier-add':el.closest('form').querySelector('.supplier-lines').insertAdjacentHTML('beforeend',supplierRow());break;
+      case 'supplier-remove':if(el.closest('form').querySelectorAll('.supplier-row').length>1)el.closest('.supplier-row').remove();break;
+      case 'supplier-example':await loadSupplierExample(el.closest('form'));break;
+      case 'supplier-annotations':loadSupplierAnnotations(el.closest('form'));break;
       case 'new-meeting':openMeeting(id);break;
       case 'manual-quote':openManualQuote(id);break;
       case 'meeting-draft': {const meeting=workflow().meetings.find(m=>m.id===id);if(meeting)newQuote(meeting.clientId,meeting);break;}
@@ -630,6 +644,29 @@
     }
     if (ids.length>5) throw new InputError('Selecciona com a màxim 5 adjunts.','attachmentFile');
     switch(form.dataset.form) {
+      case 'quote-filters':quoteFilter={client:get('filterClient'),status:get('filterStatus'),phase:get('filterPhase')};render();break;
+      case 'quote-costing': {
+        const costing=Object.fromEntries(['materials','trims','sewing','pressing','margin'].map(key=>[key,cents(get(key),key)]));
+        costing.discounts=[25,50,100,300].map(n=>cents(get('discount'+n),'discount'+n));
+        await commit({type:'SAVE_QUOTE_COSTING',id:form.dataset.id,lineId:get('lineId'),costing,terms:get('terms')},form,'Escandall aplicat a la peça.');break;
+      }
+      case 'quote-final':checkedHuman(data);await commit({type:'CREATE_FINAL_QUOTE',id:form.dataset.id,reviewed:true},form,'Esborrany definitiu creat.','pressupostos');break;
+      case 'production-note': {
+        const sizes=get('sizes').split(/[,\n]/).map(text=>text.trim()).filter(Boolean).map(text=>{
+          const match=/^([^:]{1,15}):\s*(\d+)$/.exec(text);
+          if(!match)throw new InputError('Escriu cada talla com S:5, M:10.','sizes');
+          return {label:match[1].trim(),quantity:Number(match[2])};
+        });
+        const fields=Object.fromEntries(['clientId','stage','workshop','model','description','fabric','supplier','code','color','notes'].map(key=>[key,get(key)]));
+        await commit({type:'SAVE_PRODUCTION',...fields,id:form.dataset.id || undefined,sizes,received:data.has('received')},form,'Albarà de producció desat.');break;
+      }
+      case 'direct-delivery':checkedHuman(data);await commit({type:'CREATE_DIRECT_DELIVERY',clientId:get('clientId'),model:get('model'),description:get('description'),quantity:Number(get('quantity')),unitPriceCents:cents(get('price'),'price'),productionId:form.dataset.productionId,reviewed:true},form,'Albarà de lliurament creat.','albarans');break;
+      case 'supplier-document': {
+        checkedHuman(data);
+        if(!ids.length)throw new InputError('Adjunta la foto o el PDF del proveïdor.','attachmentFile');
+        const lines=$$('.supplier-row',form).map(row=>({description:$('[name="concept"]',row).value,clientId:$('[name="allocation"]',row).value,quantity:Number($('[name="units"]',row).value),unitCostCents:cents($('[name="price"]',row).value,'price')}));
+        await commit({type:'SAVE_SUPPLIER_DOCUMENT',supplierName:get('supplierName'),reference:get('reference'),createdOn:get('createdOn'),attachmentIds:ids,lines,reviewed:true},form,'Albarà desat. Els conceptes assignats són a la fitxa dels clients.');break;
+      }
       case 'record-meeting':checkedHuman(data);await commit({type:'RECORD_MEETING',clientId:get('clientId'),notes:get('notes'),summary:get('summary'),attachmentIds:ids},form,'Reunió desada amb el resum i les fonts.');break;
       case 'manual-quote': {
         checkedHuman(data);
@@ -637,7 +674,7 @@
         if(!rows.length)throw new InputError('Afegeix almenys una peça.',null);
         const lines=rows.map(row=>{const value=name=>$(`[name="${name}"]`,row).value;return {...(row.dataset.id ? {id:row.dataset.id} : {}),garmentCode:value('garmentCode'),label:value('label'),fabricId:value('fabricId') || null,quantity:Number(value('quantity')),unitPriceCents:value('priceMode')==='tariff' ? null : cents(value('unitPriceCents'),'lines')};});
         const editing=Boolean(form.dataset.id);
-        const command=editing ? {type:'UPDATE_QUOTE_LINES',id:form.dataset.id,expectedQuoteRevision:Number(form.dataset.revision),tariff:get('tariff'),lines} : {type:'DRAFT_QUOTE_MANUAL',clientId:get('clientId'),...(get('meetingId') ? {meetingId:get('meetingId')} : {}),tariff:get('tariff'),lines,humanReviewed:true};
+        const command=editing ? {type:'UPDATE_QUOTE_LINES',id:form.dataset.id,expectedQuoteRevision:Number(form.dataset.revision),tariff:get('tariff'),lines} : {type:'DRAFT_QUOTE_MANUAL',clientId:get('clientId'),...(get('meetingId') ? {meetingId:get('meetingId')} : {}),tariff:get('tariff'),lines,humanReviewed:true,phase:'initial'};
         await commit(command,form,'Peces desades com a esborrany. Revisa els imports abans d’aprovar.','pressupostos');break;
       }
       case 'client-note':await commit({type:'ADD_CLIENT_NOTE',clientId:get('clientId'),kind:get('kind'),text:get('text'),occurredOn:get('occurredOn') || null,dueDate:get('dueDate') || null,attachmentIds:ids},form,'Entrada afegida a la cronologia. Les anteriors es conserven.');break;
@@ -684,51 +721,172 @@
   });
   function dataPurchaseIds(form) {return $$('[name="purchaseIds"]:checked',form).map(c=>c.value);}
 
+  const moduleFolders=[['clients','Clients'],['facturacio','Facturació'],['pressupostos','Pressupostos'],['albarans','Albarans']];
+  const phaseData=()=>state.phaseOne || {production:[],suppliers:[]};
+  const quotePhase=q=>({initial:'Orientatiu',final:'Definitiu'}[q.phase] || 'Històric');
+  const invoiceableQuote=q=>q.phase!=='initial' && ['approved','sent_simulated'].includes(q.status);
+  const deadlineTone=(on,today)=>{
+    const days=(Date.parse(on)-Date.parse(today))/86400000;
+    return days<=1 ? ['urgent',days<0?'Endarrerida':'Urgent'] : days<=3 ? ['soon','Pròxima'] : ['planned','Amb marge'];
+  };
   function renderHome() {
-    if (route.id) return notFound();
-    const data = requireQuery({type:'DASHBOARD'});
-    const summary = data.summary;
-    const stats = [
-      ['Pressupostos per revisar',summary.quotesPendingCount,'Esborranys pendents','pressupostos','quote'],
-      ['En producció',summary.productionCount,'Al taller i a punt','albarans','delivery'],
-      ['Seguiments pendents',summary.tasksPendingCount,'Tasques del taller','seguiment','task'],
-      ['Facturació il·lustrativa',money(summary.invoicedCents),'Total dels documents ficticis','facturacio','invoice']
-    ];
-    return `<section class="atelier-hero">
-      <div class="atelier-hero-content">
-        <h1 tabindex="-1">El taller, d’una ullada.</h1>
-        <p>Pressupostos, producció i seguiment dels clients.</p>
-        <div class="actions">${button('Nou pressupost','new-quote','',false,'plus')}<a class="button secondary" href="#/calendari">${icon('calendar')} Obre el calendari</a></div>
-      </div>
-      <img src="assets/taller-editorial.webp" alt="" width="1200" height="800" fetchpriority="high">
-    </section>` +
-      `<div class="stats-grid">${stats.map(([label,value,note,slug,image]) => `<a class="stat" href="${path(slug)}"><div class="stat-label">${escape(label)}<span class="stat-icon">${icon(image)}</span></div><div class="stat-value mono">${escape(value)}</div><div class="stat-note">${escape(note)} <span aria-hidden="true">↗</span></div></a>`).join('')}</div>
-      <div class="grid-2"><section class="panel">${panelHead('Prioritats del taller','Pendents de l’escenari fictici',`<a href="#/seguiment">Tot el seguiment ↗</a>`)}<div class="panel-body">${data.priorityTasks.length ? data.priorityTasks.slice(0,4).map(task => `<div class="task-row"><span class="task-marker"></span><div class="task-row-content">${link('seguiment',task.id,task.text)}<small>${escape(clientName(task.clientId))}</small></div><span class="date-chip">${date(task.dueDate)}</span></div>`).join('') : empty('Tot al dia','No hi ha seguiments pendents. Les tasques completades continuen al seu mòdul.')}</div></section>
-      <section class="panel">${panelHead('El ritme de producció','Albarans per estat · unitat: documents')}<div class="panel-body"><div class="pipeline">${[['workshop','Al taller'],['ready','A punt'],['delivered','Lliurats']].map(([key,label]) => `<a href="#/albarans"><strong class="mono">${data.production[key]}</strong>${label}<span class="stage-bar"></span></a>`).join('')}</div></div><div class="panel-foot">Font: albarans ficticis de l’estat local.</div></section></div>
-      <div class="grid-2"><section class="panel">${panelHead('Facturació, mes a mes','Imports totals il·lustratius · EUR')}${renderChart(data.billingSeries)}<div class="panel-foot">Font: factures de la demo. Cada document es compta una vegada.</div></section>
-      <section class="panel pad workshop-card"><div><div class="eyebrow">DE LA IDEA A LA PEÇA</div><h2>Cada peça té<br>un fil conductor.</h2><p>Converteix les notes d’una reunió en un esborrany i revisa’l abans de continuar.</p></div>${button('Comença amb unes notes','new-quote','',false,'arrow')}</section></div>
-      <section class="panel">${panelHead('Documents recents','Registres locals · dades fictícies',`<a href="#/pressupostos">Veure pressupostos ↗</a>`)}${quoteTable(state.quotes.slice(-4).reverse())}</section>
-      ${data.sources.length ? `<div class="section-title"><p>Fonts del resum</p></div><div class="source-links">${sourceLinks(data.sources)}</div>` : ''}`;
+    if(route.id)return notFound();
+    const today=serverToday();
+    const pending=state.tasks.filter(t=>t.status==='pending').sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+    const priorities=pending.filter(t=>t.dueDate<=today);
+    const upcoming=pending.filter(t=>t.dueDate>today).slice(0,4);
+    const list=tasks=>tasks.map(t=>{
+      const [tone,label]=deadlineTone(t.dueDate,today);
+      return `<div class="task-row"><div class="task-row-content">${link('seguiment',t.id,t.text)}<small>${escape(clientName(t.clientId))} · ${date(t.dueDate)}</small></div><span class="phase-chip ${tone}">${label}</span></div>`;
+    }).join('');
+    return heading('El teu espai de treball',date(today),'<a class="button secondary" href="#/calendari">'+icon('calendar')+' Obre el calendari</a>')+
+      `<nav class="folder-grid" aria-label="Carpetes de treball">${moduleFolders.map(([slug,label])=>`<a class="folder-card folder-${slug}" href="${path(slug)}">${icon('folder')}<strong>${label}</strong>${icon('arrow')}</a>`).join('')}</nav>
+      <div class="grid-2"><section class="panel">${panelHead('Tasques a fer avui','Avui i pendents endarrerides',button('Nova tasca','new-task','',true,'plus'))}<div class="panel-body">${priorities.length?list(priorities):empty('Tot al dia','Les tasques amb data d’avui apareixeran aquí.')}</div></section>
+      <section class="panel">${panelHead('Pròximes tasques','Del calendari de treball','<a href="#/calendari">Veure calendari</a>')}<div class="panel-body">${upcoming.length?list(upcoming):empty('Cap tasca prevista','Pots programar-ne una al calendari.')}</div></section></div>`;
   }
-
-  function renderChart(series) {
-    if (!series.length) return empty('Encara no hi ha facturació','El gràfic apareixerà quan es creï la primera factura il·lustrativa.');
-    const max = Math.max(...series.map(s => s.totalCents),1);
-    const width = Math.max(420,series.length * 85 + 85);
-    const available = width - 100;
-    const step = available / series.length;
-    return `<div class="chart-area"><svg class="billing-chart" viewBox="0 0 ${width} 220" role="img" aria-label="Facturació fictícia mensual, en euros. ${escape(series.map(s => s.period + ': ' + money(s.totalCents)).join('; '))}">
-      ${[0,1,2].map(i => `<line x1="60" x2="${width-15}" y1="${170-i*65}" y2="${170-i*65}" stroke="#e6e1da" stroke-dasharray="3 4"/><text x="50" y="${174-i*65}" text-anchor="end" fill="#6f6b63" font-size="9">${escape(new Intl.NumberFormat('ca-ES',{maximumFractionDigits:0}).format(max / 100 * i / 2))}</text>`).join('')}
-      ${series.map((s,i) => {const height = s.totalCents / max * 130;const x = 68+i*step;return `<rect x="${x}" y="${170-height}" width="${Math.max(10,step-22)}" height="${height}" rx="3" fill="#b7a185"><title>${escape(s.period)} · ${money(s.totalCents)}</title></rect><text x="${x+(step-22)/2}" y="195" text-anchor="middle" fill="#6f6b63" font-size="10">${escape(s.period)}</text>`;}).join('')}</svg></div><div class="legend"><span>Total facturat fictici · EUR</span></div>`;
+  let quoteFilter={client:'',status:'',phase:''};
+  function filteredQuotes() {
+    return state.quotes.filter(q=>(!quoteFilter.client||q.clientId===quoteFilter.client)&&(!quoteFilter.status||q.status===quoteFilter.status)&&(!quoteFilter.phase||q.phase===quoteFilter.phase));
   }
-
+  function quoteFilters() {
+    const statuses=['draft','approved','sent_simulated'].map(key=>[key,statusLabels[key]]);
+    return `<div class="panel-body"><form data-form="quote-filters" class="toolbar">
+      ${field('filterClient','Client',select('filterClient',[['','Tots'],...state.clients.map(c=>[c.id,c.name])],quoteFilter.client))}
+      ${field('filterStatus','Estat',select('filterStatus',[['','Tots'],...statuses],quoteFilter.status))}
+      ${field('filterPhase','Fase',select('filterPhase',[['','Totes'],['initial','Orientatiu'],['final','Definitiu']],quoteFilter.phase))}
+      <button type="submit" class="button">Filtra</button></form></div>`;
+  }
+  function quotePhasePanel(q) {
+    const final=state.quotes.find(item=>item.initialQuoteId===q.id);
+    const initial=state.quotes.find(item=>item.id===q.initialQuoteId);
+    const refs=final ? link('pressupostos',final.id,'Definitiu '+final.number) : initial ? link('pressupostos',initial.id,'Orientatiu '+initial.number) : '';
+    const conversion=q.phase==='initial'&&q.status!=='draft'&&!final ? button('Crea el definitiu','quote-final',q.id) : '';
+    return `<section class="panel">${panelHead('Pressupost '+quotePhase(q).toLowerCase(),'',
+      (q.status==='draft'?button('Escandall i condicions','quote-costing',q.id,true):'')+conversion)}
+      ${refs||q.terms ? `<div class="panel-body">${refs}${q.terms?`<p class="notes">${escape(q.terms)}</p>`:''}</div>` : ''}</section>`;
+  }
+  function openCosting(id) {
+    const q=state.quotes.find(q=>q.id===id);
+    const b=q.costing||{materials:0,trims:0,sewing:0,pressing:0,margin:0,discounts:[0,0,0,0]};
+    const entries=[['materials','Teixit per unitat (€)'],['trims','Fornitures per unitat (€)'],['sewing','Confecció per unitat (€)'],['pressing','Planxa per unitat (€)'],['margin','Recàrrec de gestió (%)']];
+    const textAmount=(name,label,amount)=>field(name,label,input(name,'text',decimalMoney(amount),'inputmode="decimal" required'));
+    openDialog('Escandall i condicions',dialogForm('quote-costing',
+      field('lineId','Peça',select('lineId',q.lines.map(line=>[line.id,line.label]),q.lines[0].id))+
+      '<div class="form-grid">'+entries.map(([key,label])=>textAmount(key,label,b[key])).join('')+'</div>'+
+      '<h3>Descompte segons volum</h3><div class="form-grid">'+[25,50,100,300].map((qty,i)=>textAmount('discount'+qty,qty+' unitats (%)',b.discounts[i])).join('')+'</div>'+
+      '<div id="costing-preview" role="status"></div>'+
+      field('terms','Condicions de la plantilla',`<textarea id="terms" name="terms" maxlength="1200" rows="3">${escape(q.terms||'')}</textarea>`),
+      'Aplica a la peça',`data-id="${escape(q.id)}"`),true);
+    const form=$('[data-form="quote-costing"]',overlay);
+    const preview=()=>{
+      try {
+        const get=key=>cents(form.elements[key].value,key);
+        const unit=['materials','trims','sewing','pressing'].reduce((n,key)=>n+BigInt(get(key)),0n);
+        const base=unit*BigInt(10000+get('margin'));
+        $('#costing-preview',form).innerHTML='<ul class="costing-tiers">'+[25,50,100,300].map(qty=>{
+          const discount=get('discount'+qty);
+          if(discount>10000)throw Error();
+          const price=(base*BigInt(10000-discount)+50000000n)/100000000n;
+          return `<li><strong>${qty} unitats</strong><span>${money(price)} / u.</span><span>${money(price*BigInt(qty))}</span></li>`;
+        }).join('')+'</ul>';
+      } catch (_) {$('#costing-preview',form).textContent='Revisa els imports i els percentatges.';}
+    };
+    form.addEventListener('input',preview);preview();
+  }
+  function productionTable(rows) {
+    return rows.length?table(['Albarà','Client / taller','Model','Talles','Estat','Accions'],rows.map(row=>
+      `<tr><td>${escape(row.id.toUpperCase())}<br>${date(row.createdOn)}</td><td>${link('clients',row.clientId,clientName(row.clientId))}<br>${escape(row.workshop)}</td><td>${escape(row.model)} · ${escape(row.description)}</td><td>${row.sizes.map(size=>escape(size.label)+': '+size.quantity).join(' · ')}</td><td>${escape(row.stage)} · ${row.status==='received'?'Rebut':'Pendent'}</td><td>${button('Document','print-production',row.id,true,'print')}${row.status==='pending'?button('Edita / rep','edit-production',row.id,true): (row.stage!=='Planxa'?button('Pas següent','next-production',row.id,true):'')+button('Prepara el lliurament','direct-delivery',row.id,true)}</td></tr>`))
+      : empty('Cap albarà de producció','Crea un albarà vinculat al client i al taller.');
+  }
+  function deliverySections() {
+    return heading('Albarans','Producció, lliuraments i costos dels proveïdors.')+
+      '<nav class="actions section-title" aria-label="Tipus d’albarà">'+[['produccio','Producció'],['lliurament','Lliurament'],['proveidor','Proveïdor']].map(([id,label])=>`<button class="button secondary" data-action="phase-scroll" data-id="${id}">${label}</button>`).join('')+'</nav>'+
+      `<section id="produccio" class="panel">${panelHead('Producció','Tall, confecció i planxa',button('Nou albarà de producció','new-production','',false,'plus'))}${productionTable(phaseData().production)}</section>
+      <section id="lliurament" class="panel">${panelHead('Lliurament','La factura es genera a partir dels albarans lliurats.',button('Nou albarà de lliurament','direct-delivery','',false,'plus')+button('Des d’un pressupost definitiu','new-delivery','',true))}${deliveryTable(state.deliveryNotes)}</section>
+      <section id="proveidor" class="panel">${panelHead('Proveïdor','Assigna cada concepte al client que l’ha de pagar.',button('Nou albarà de proveïdor','supplier-document','',false,'plus'))}<div class="panel-body">${phaseData().suppliers.length?phaseData().suppliers.map(supplierCard).join(''):empty('Cap albarà de proveïdor','Pots adjuntar una foto o un PDF i revisar els conceptes.')}</div></section>`+workshopPanel();
+  }
+  function supplierCard(doc) {
+    return `<article class="record-card"><h3>${escape(doc.reference)} · ${escape(doc.supplierName)}</h3><p>${date(doc.createdOn)}</p>${attachmentList(doc.attachmentIds)}
+      ${table(['Concepte','Assignació','Unitats','Preu unitari'],doc.lines.map(line=>`<tr><td>${escape(line.description)}</td><td>${line.clientId?link('clients',line.clientId,clientName(line.clientId)):'New Op / sense client'}</td><td>${line.quantity}</td><td>${money(line.unitCostCents)}</td></tr>`))}</article>`;
+  }
+  function openProduction(id='',next=false) {
+    const row=phaseData().production.find(row=>row.id===id)||{};
+    const stages=['Tall','Confecció','Planxa'];
+    const stage=next ? stages[stages.indexOf(row.stage)+1] : row.stage||stages[0];
+    const productionFields=[['workshop','Taller'],['model','Número de model'],['description','Descripció'],['fabric','Teixit'],['supplier','Proveïdor del teixit'],['code','Codi del teixit'],['color','Color']];
+    const fields=productionFields.map(([key,label],index)=>field(key,label,input(key,'text',row[key]||'',index<3?'required':''))).join('');
+    openDialog('Albarà de producció',dialogForm('production-note',
+      `<div class="form-grid">${field('clientId','Client',clientOptions(row.clientId||''))}${field('stage','Operació',select('stage',stages.map(s=>[s,s]),stage))}${fields}</div>
+      ${field('sizes','Quantitats per talla',`<textarea id="sizes" name="sizes" rows="2" required>${escape(row.sizes?.map(s=>s.label+':'+s.quantity).join(', ')||'')}</textarea>`,'Per exemple, S:5, M:10, L:15. En rebre les peces, indica el recompte real.')}
+      ${field('notes','Observacions tècniques',`<textarea id="notes" name="notes" rows="3" maxlength="1200">${escape(row.notes||'')}</textarea>`)}
+      ${id&&!next?'<label class="check-field"><input type="checkbox" name="received"> Marca com a rebut amb aquestes quantitats</label>':''}`,
+      'Desa l’albarà',`data-id="${escape(next?'':id)}"`),true);
+  }
+  function printProduction(id) {
+    const row=phaseData().production.find(row=>row.id===id);
+    if(!row)return;
+    showPrintable('Albarà de producció',`<article class="print-sheet paper-document"><header class="paper-brand"><div><h3>Albarà de producció ${escape(row.id.toUpperCase())}</h3><p>${date(row.createdOn)} · ${escape(row.stage)}</p></div><img src="assets/newop-logo.png" width="200" alt="NEW OP"></header>
+      <h3>${escape(row.workshop)}</h3><p>${escape(clientName(row.clientId))}</p><p>${escape(row.model)} · ${escape(row.description)}</p>
+      <p>${[row.fabric,row.supplier,row.code,row.color].filter(Boolean).map(escape).join(' · ')}</p>
+      ${table(row.sizes.map(size=>size.label).concat('Total'),[`<tr>${row.sizes.map(size=>`<td>${size.quantity}</td>`).join('')}<td>${row.sizes.reduce((n,s)=>n+s.quantity,0)}</td></tr>`])}
+      ${row.notes?`<section class="paper-notes"><h4>Observacions tècniques</h4><p class="notes">${escape(row.notes)}</p></section>`:''}<footer class="paper-footer">Document de demostració</footer></article>`);
+  }
+  function openDirectDelivery(id='') {
+    const row=phaseData().production.find(row=>row.id===id);
+    const assigned=state.deliveryNotes.filter(note=>row&&note.productionId===row.id).flatMap(note=>note.lines).reduce((n,line)=>n+line.quantity,0);
+    const quantity=row ? row.sizes.reduce((n,size)=>n+size.quantity,0)-assigned : 1;
+    if(quantity<=0){notify('Totes les peces rebudes ja són en albarans de lliurament.');return;}
+    const agreed=row && state.quotes.filter(q=>q.clientId===row.clientId&&q.phase==='final'&&invoiceableQuote(q)).reverse()
+      .flatMap(q=>q.lines).find(line=>line.garmentCode.toLowerCase()===row.model.toLowerCase());
+    openDialog('Albarà de lliurament',dialogForm('direct-delivery',
+      `<div class="form-grid">${field('clientId','Client',clientOptions(row?.clientId||''))}${field('model','Model',input('model','text',row?.model||'','required maxlength="20"'))}${field('description','Descripció',input('description','text',row?.description||'','required'))}
+      ${field('quantity','Unitats per lliurar',input('quantity','number',quantity,'min="1" step="1" required'))}${field('price','Preu unitari acordat (€)',input('price','text',agreed?decimalMoney(agreed.unitPriceCents):'','inputmode="decimal" required'))}</div>`+humanReview('He comprovat el recompte final i el preu acordat.'),
+      'Crea l’albarà',`data-production-id="${escape(id)}"`),true);
+  }
+  let supplierSequence=0;
+  function supplierRow(concept='',clientId='',units=1,price='',unknown='') {
+    const index=++supplierSequence;
+    const item=(label,name,type,value,attrs='')=>field(name+index,label,input(name,type,value,attrs).replace('id="'+name+'"','id="'+name+index+'"'));
+    return `<fieldset class="supplier-row"><legend>Concepte del proveïdor</legend><div class="form-grid">${item('Concepte','concept','text',concept,'required')}${item('Unitats','units','number',units,'required min="1" step="1"')}${item('Cost unitari (€)','price','text',price,'required inputmode="decimal"')}
+      ${field('allocation'+index,'Assigna a',select('allocation',[['','New Op / sense client'],...state.clients.map(c=>[c.id,c.name])],clientId).replace('id="allocation"','id="allocation'+index+'"'))}</div>${unknown?`<p class="field-help">Revisa el client anotat: ${escape(unknown)}</p>`:''}${button('Treu el concepte','supplier-remove','',true)}</fieldset>`;
+  }
+  function openSupplierDocument() {
+    openDialog('Albarà de proveïdor',dialogForm('supplier-document',
+      `<div class="form-grid">${field('supplierName','Proveïdor',input('supplierName','text','','required'))}${field('reference','Número o referència',input('reference','text','','required'))}${field('createdOn','Data de l’albarà',input('createdOn','date',serverToday(),'required'))}</div>
+      ${attachmentPicker(false,true)}<div class="actions">${button('Afegeix un concepte','supplier-add','',true,'plus')}${button('Carrega una mostra simulada','supplier-example','',true)}</div>
+      <details class="attachment-picker"><summary>Enganxa els conceptes anotats</summary>${field('annotations','Text revisat','<textarea id="annotations" name="annotations" rows="3" placeholder="Folre | 3 | 4,50 | Estudi Brisa"></textarea>','Una línia per concepte amb el format concepte | unitats | preu | client.')}${button('Proposa les assignacions','supplier-annotations','',true)}</details><div class="supplier-lines">${supplierRow()}</div>`+humanReview('He revisat els imports i el client assignat a cada concepte.'),
+      'Desa i assigna els costos'),true);
+  }
+  function loadSupplierAnnotations(form) {
+    const rows=form.elements.annotations.value.split(/\n/).map(line=>line.trim()).filter(Boolean);
+    if(!rows.length||rows.length>50)throw new InputError('Enganxa entre 1 i 50 conceptes.','annotations');
+    const normalize=text=>text.normalize('NFD').replace(/\p{Diacritic}/gu,'').trim().toLowerCase();
+    const values=rows.map(row=>{
+      const [concept,quantity,price,name='',...extra]=row.split('|').map(part=>part.trim());
+      if(!concept||!/^\d+$/.test(quantity||'')||Number(quantity)<1||price===undefined||extra.length)throw new InputError('Format: concepte | unitats | preu | client.','annotations');
+      cents(price,'annotations');
+      const client=state.clients.find(client=>normalize(client.name)===normalize(name));
+      return {concept,quantity,price,clientId:client?.id||'',unknown:!client&&name&&!['casa','new op','newop'].includes(normalize(name))?name:''};
+    });
+    $('.supplier-lines',form).innerHTML=values.map(line=>supplierRow(line.concept,line.clientId,line.quantity,line.price,line.unknown)).join('');
+    form.elements.reviewed.checked=false;
+  }
+  async function loadSupplierExample(form) {
+    const source=await sampleMeetingPhoto(['ALBARÀ DE PROVEÏDOR · MOSTRA','Folre cru · 3 × 4,50 €','Folre negre · 2 × 5,00 €','Agulles · 1 × 2,00 €'],'albara-proveidor-mostra.png');
+    if(!form.isConnected)return;
+    form.elements.supplierName.value='Proveïdor de mostra';
+    form.elements.reference.value='MOSTRA-'+Date.now().toString(36).toUpperCase();
+    $('.supplier-lines',form).innerHTML=supplierRow('Folre cru',state.clients[0].id,3,'4,50')+supplierRow('Folre negre',state.clients[1].id,2,'5,00')+supplierRow('Agulles', '',1,'2,00');
+    form.elements.attachmentFile.closest('details').open=true;
+    await uploadAttachment(form,source);
+  }
   function quoteTable(quotes) {
     if (!quotes.length) return empty('Cap pressupost encara','Crea un esborrany a partir de notes fictícies.',button('Nou pressupost','new-quote','',false,'plus'));
-    return table(['Document','Client fictici','Data','Estat','Total demo'],quotes.map(q => `<tr><td>${link('pressupostos',q.id,q.number)}<span class="cell-secondary">Tarifa ${escape(q.tariff)} · Rev. ${q.revision}</span></td><td>${link('clients',q.clientId,clientName(q.clientId))}</td><td>${date(q.createdOn)}</td><td>${badge(q.status)}</td><td class="mono">${money(q.totals.totalCents)}</td></tr>`));
+    return table(['Document','Client fictici','Data','Estat','Total demo'],quotes.map(q => `<tr><td>${link('pressupostos',q.id,q.number)}<span class="cell-secondary">${quotePhase(q)} · Rev. ${q.revision}</span></td><td>${link('clients',q.clientId,clientName(q.clientId))}</td><td>${date(q.createdOn)}</td><td>${badge(q.status)}</td><td class="mono">${money(q.totals.totalCents)}</td></tr>`));
   }
   function deliveryTable(notes) {
     if (!notes.length) return empty('Cap albarà encara','Comença amb un pressupost aprovat per preparar la producció.',button('Nou albarà','new-delivery','',false,'plus'));
-    return table(['Albarà','Client fictici','Pressupost','Estat','Total demo'],notes.map(d => `<tr><td>${link('albarans',d.id,d.number)}<span class="cell-secondary">${date(d.createdOn)}</span></td><td>${link('clients',d.clientId,clientName(d.clientId))}</td><td>${link('pressupostos',d.quoteId,state.quotes.find(q => q.id === d.quoteId)?.number || d.quoteId)}</td><td>${badge(d.status)}</td><td class="mono">${money(d.totals.totalCents)}</td></tr>`));
+    return table(['Albarà','Client fictici','Pressupost','Estat','Total demo'],notes.map(d => `<tr><td>${link('albarans',d.id,d.number)}<span class="cell-secondary">${date(d.createdOn)}</span></td><td>${link('clients',d.clientId,clientName(d.clientId))}</td><td>${d.quoteId ? link('pressupostos',d.quoteId,state.quotes.find(q => q.id === d.quoteId)?.number || d.quoteId) : '—'}</td><td>${badge(d.status)}</td><td class="mono">${money(d.totals.totalCents)}</td></tr>`));
   }
   function invoiceTable(invoices) {
     if (!invoices.length) return empty('Cap factura encara','Agrupa albarans lliurats d’un mateix client per crear una factura il·lustrativa.',button('Prepara una factura','new-invoice','',false,'plus'));
@@ -746,10 +904,10 @@
   }
 
   function renderQuotesBase() {
-    if (!route.id) return heading('Pressupostos','De la reunió al pressupost: peces, imports i fonts, sempre revisats.',button('Entrada manual','manual-quote','',false,'plus') + button('Desa una reunió','new-meeting','',true,'task') + button('Notes assistides','new-quote','',true,'query')) + `<section class="panel">${panelHead('Totes les propostes','Tarifes i imports exclusivament il·lustratius')}${quoteTable(state.quotes)}</section>`;
+    if (!route.id) return heading('Pressupostos','De la reunió al pressupost: peces, imports i fonts, sempre revisats.',button('Entrada manual','manual-quote','',false,'plus') + button('Desa una reunió','new-meeting','',true,'task') + button('Notes assistides','new-quote','',true,'query')) + `<section class="panel">${panelHead('Totes les propostes','Tarifes i imports exclusivament il·lustratius')}${quoteFilters()+quoteTable(filteredQuotes())}</section>`;
     const q = state.quotes.find(item => item.id === route.id);
     if (!q) return notFound();
-    const actions = button('Document','document',q.id,true,'print') + (['approved','sent_simulated'].includes(q.status) && q.lines.some(line=>remainingQuantity(q,line)>0) ? button('Crea un albarà','new-delivery',q.id,false,'plus') : '');
+    const actions = button('Document','document',q.id,true,'print') + (invoiceableQuote(q) && q.lines.some(line=>remainingQuantity(q,line)>0) ? button('Crea un albarà','new-delivery',q.id,false,'plus') : '');
     let content = detailHeader(q,'Pressupost',actions);
     if (q.status === 'draft') {
       content += `<form id="quote-editor" data-form="edit-quote" data-id="${escape(q.id)}" novalidate><section class="panel">${panelHead('Revisa les peces','Desar qualsevol canvi anul·la la revisió anterior.')}<div class="panel-body">${formError}${field('tariff','Tarifa il·lustrativa',tariffOptions('tariff',q.tariff))}<div class="line-editor">${linesTable(q.lines,true)}</div><p class="field-help">Amb «Segons tarifa», el motor recalcula el preu en desar. «Preu manual» permet editar-lo. Imports en euros, màxim dos decimals.</p><div class="form-actions"><button type="submit" class="button secondary">Desa els canvis</button></div></div></section></form><p id="quote-dirty" class="review-status pending" hidden>Hi ha canvis sense desar. Desa’ls abans de revisar o aprovar.</p><p class="review-status ${q.reviewedRevision === q.revision ? '' : 'pending'}">${q.reviewedRevision === q.revision ? 'Revisió humana confirmada per a la revisió ' + q.revision + '.' : 'Pendent de revisió humana explícita.'}</p><div class="actions">${button('Revisa el pressupost','review-quote',q.id,true,'check')}${button('Aprova el pressupost','approve-quote',q.id)}</div>`;
@@ -762,11 +920,11 @@
   }
 
   function renderDeliveriesBase() {
-    if (!route.id) return heading('Albarans','Un pas més a prop de la peça acabada.',button('Nou albarà','new-delivery','',false,'plus')) + `<section class="panel">${panelHead('Producció del taller','Del taller al lliurament · operacions fictícies')}${deliveryTable(state.deliveryNotes)}</section>`;
+    if (!route.id) return '';
     const d = state.deliveryNotes.find(item => item.id === route.id);
     if (!d) return notFound();
     const next = d.status === 'workshop' ? ['ready','Marca a punt'] : d.status === 'ready' ? ['delivered','Marca lliurat'] : null;
-    return detailHeader(d,'Albarà',button('Document','document',d.id,true,'print') + (next ? `<button type="button" class="button" data-action="delivery-status" data-id="${escape(d.id)}" data-status="${next[0]}">${next[1]}</button>` : button('Prepara una factura','new-invoice',d.id))) + `<p class="small muted">Pressupost d’origen: ${link('pressupostos',d.quoteId,state.quotes.find(q => q.id === d.quoteId)?.number || d.quoteId)}</p><section class="panel">${panelHead('Peces de l’albarà','Quantitats i preus conservats en crear el document')}${linesTable(d.lines)}${totals(d.totals,d.taxRateBps)}</section><div class="hint">Circuit de taller: Al taller → A punt → Lliurat. Aquest albarà és una simulació.</div>`;
+    return detailHeader(d,'Albarà',button('Document','document',d.id,true,'print') + (next ? `<button type="button" class="button" data-action="delivery-status" data-id="${escape(d.id)}" data-status="${next[0]}">${next[1]}</button>` : button('Prepara una factura','new-invoice',d.id))) + `<p class="small muted">Pressupost d’origen: ${d.quoteId ? link('pressupostos',d.quoteId,state.quotes.find(q => q.id === d.quoteId)?.number || d.quoteId) : '—'}</p><section class="panel">${panelHead('Peces de l’albarà','Quantitats i preus conservats en crear el document')}${linesTable(d.lines)}${totals(d.totals,d.taxRateBps)}</section><div class="hint">Circuit de taller: Al taller → A punt → Lliurat. Aquest albarà és una simulació.</div>`;
   }
 
   function renderInvoicesBase() {
@@ -833,11 +991,11 @@
     return Number(BigInt(line.quantity)>reserved ? BigInt(line.quantity)-reserved : 0n);
   }
   function newDelivery(quoteId = '') {
-    const requested=state.quotes.find(q=>q.id===quoteId);
+    const requested=state.quotes.find(q=>q.id===quoteId && invoiceableQuote(q));
     if (requested && !requested.lines.some(line=>remainingQuantity(requested,line)>0)) {
       openDialog('Unitats ja assignades',`<p class="dialog-intro">Totes les unitats d’aquest pressupost ja tenen albarà. No es tornarà a reservar el mateixa comanda.</p><div class="source-links">${state.deliveryNotes.filter(d=>d.quoteId===quoteId).map(d=>`<a href="${path('albarans',d.id)}" data-action="dialog-link">${escape(d.number)}</a>`).join('')}</div>`+disclaimer);return;
     }
-    const quotes = state.quotes.filter(q => ['approved','sent_simulated'].includes(q.status) && q.lines.some(line=>remainingQuantity(q,line)>0));
+    const quotes = state.quotes.filter(q => invoiceableQuote(q) && q.lines.some(line=>remainingQuantity(q,line)>0));
     if (!quotes.length) {
       const approved=state.quotes.some(q=>['approved','sent_simulated'].includes(q.status));
       openDialog('Nou albarà',empty(approved ? 'No queden unitats per assignar' : 'Cal un pressupost aprovat',approved ? 'Totes les unitats aprovades ja estan reservades en albarans. Continua amb els documents existents.' : 'Revisa i aprova una proposta abans de preparar les peces.',`<a class="button" href="${approved ? '#/albarans' : '#/pressupostos'}" data-action="dialog-link">${approved ? 'Ves als albarans existents' : 'Ves als pressupostos'}</a>`)+disclaimer);return;
@@ -861,7 +1019,7 @@
   function paperDocument(entity, kind) {
     const delivery = kind === 'albarans';
     const invoice = kind === 'facturacio';
-    const title = invoice ? 'Factura' : delivery ? 'Albarà' : 'Pressupost';
+    const title = invoice ? 'Factura' : delivery ? 'Albarà de lliurament' : 'Pressupost '+quotePhase(entity).toLowerCase();
     const client = state.clients.find(item => item.id === entity.clientId);
     const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
     const rows = entity.lines.map(line => `<tr>
@@ -871,12 +1029,14 @@
       <td class="mono">${money(BigInt(line.unitPriceCents) * BigInt(line.quantity))}</td>
     </tr>`);
     const source = delivery && state.quotes.find(quote => quote.id === entity.quoteId);
+    const production=delivery && phaseData().production.find(row=>row.id===entity.productionId);
     return `<article class="print-sheet paper-document">
       <header class="paper-brand"><div><strong>Noves Iniciatives de Confecció</strong><br>Sabadell · Espai de taller</div><img src="assets/newop-logo.png" width="230" height="70" alt="NEW OP"></header>
-      <div class="paper-meta"><div><h3>${title} ${escape(entity.number)}</h3><p>Data ${date(entity.createdOn)}</p>${source ? `<p>Pressupost d’origen ${escape(source.number)}</p>` : ''}</div>
+      <div class="paper-meta"><div><h3>${title} ${escape(entity.number)}</h3><p>Data ${date(entity.createdOn)}</p>${source ? `<p>Pressupost d’origen ${escape(source.number)}</p>` : ''}${production ? `<p>Producció ${escape(production.id.toUpperCase())} · ${escape(production.workshop)}</p>` : ''}</div>
       <div><small>Client fictici</small><br><strong>${escape(clientName(entity.clientId))}</strong>${client?.email ? `<br>${escape(client.email)}` : ''}</div></div>
       ${table(['Ref. / descripció','Teixit','Unitats','Preu unitari','Import'], [...rows,`<tr class="paper-total"><th scope="row" colspan="2">Total de peces</th><td>${units}</td><td></td><td>${money(entity.totals.baseCents)}</td></tr>`])}
       ${totals(entity.totals,entity.taxRateBps)}
+      ${entity.terms ? `<section class="paper-notes"><h4>Condicions de la proposta</h4><p class="notes">${escape(entity.terms)}</p></section>` : ''}
       ${entity.notes ? `<section class="paper-notes"><h4>Observacions</h4><p class="notes">${escape(entity.notes)}</p></section>` : ''}
       ${delivery ? '' : '<section class="paper-notes"><h4>Acceptació del pressupost</h4><div class="paper-signatures"><span>Signatura del client</span><span>Signatura de NEW OP</span></div></section>'}
       <footer class="paper-footer">Document de demostració · Dades fictícies · Sense validesa fiscal o legal</footer>
@@ -886,7 +1046,7 @@
   function openPaperDocument(entity, kind) {
     const delivery = kind === 'albarans';
     const invoice = kind === 'facturacio';
-    const title = invoice ? 'Factura' : delivery ? 'Albarà' : 'Pressupost';
+    const title = invoice ? 'Factura' : delivery ? 'Albarà de lliurament' : 'Pressupost '+quotePhase(entity).toLowerCase();
     const units = entity.lines.reduce((sum,line) => sum + line.quantity, 0);
     const markup = invoice ? documentMarkup(entity,kind) : paperDocument(entity,kind);
     $('#print-document').innerHTML = markup;
@@ -1442,7 +1602,7 @@
         }
         case 'new-client': await commit({type:'CREATE_CLIENT',name:get('name'),email:get('email').trim() || null},form,'Client fictici creat.','clients');break;
         case 'new-task': await commit({type:'CREATE_TASK',clientId:get('clientId'),text:get('text'),dueDate:get('dueDate')},form,'Seguiment desat. No s’ha enviat cap missatge.',route.module === 'calendari' ? undefined : 'seguiment');break;
-        case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff'),meetingId:form.dataset.meetingId || null},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
+        case 'new-quote': await commit({type:'DRAFT_QUOTE',clientId:get('clientId'),notes:get('notes'),tariff:get('tariff'),meetingId:form.dataset.meetingId || null,phase:'initial'},form,'Esborrany simulat creat. Revisa les peces i els imports.','pressupostos');break;
         case 'edit-quote': {
           const q = state.quotes.find(item => item.id === form.dataset.id);
           const lines = editedQuoteLines(form);

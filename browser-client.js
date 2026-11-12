@@ -14,6 +14,7 @@
       return Uint8Array.from(atob(content), char => char.charCodeAt(0));
     }
     function matchesImage(bytes, type) {
+      if (type === 'application/pdf') return String.fromCharCode(...bytes.subarray(0,5)) === '%PDF-';
       if (type === 'image/jpeg') return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
       if (type === 'image/png') return [137,80,78,71,13,10,26,10].every((byte, index) => bytes[index] === byte);
       const ascii = (start, end) => String.fromCharCode(...bytes.subarray(start,end));
@@ -33,8 +34,8 @@
       session: async () => success({authenticated: true, mode: 'browser'}),
       state: async () => success(snapshot(openStore())),
       async uploadAttachment({filename, mimeType, contentBase64, expectedRevision, idempotencyKey}, {signal} = {}) {
-        if (!allowedImages.includes(mimeType) || typeof contentBase64 !== 'string' || contentBase64.length > 1398104) {
-          return failure('INVALID_FILE','Tria una foto JPEG, PNG o WebP de fins a 1 MiB.');
+        if (![...allowedImages,'application/pdf'].includes(mimeType) || typeof contentBase64 !== 'string' || contentBase64.length > 1398104) {
+          return failure('INVALID_FILE','Tria una foto JPEG, PNG, WebP o un PDF de fins a 1 MiB.');
         }
         let bytes;
         try {bytes = decode(contentBase64);} catch (_) {return failure('INVALID_FILE','La foto no es pot llegir.');}
